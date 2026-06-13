@@ -84,6 +84,8 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 # Install Codex
 RUN npm install -g @openai/codex@latest
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # Copy and set up firewall script
 COPY init-firewall.sh /usr/local/bin/
