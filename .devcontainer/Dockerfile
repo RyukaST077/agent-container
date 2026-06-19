@@ -5,6 +5,10 @@ ENV TZ="$TZ"
 
 ARG CLAUDE_CODE_VERSION=latest
 
+# Playwright のブラウザ／システムライブラリをイメージへ焼き込むためのバージョン。
+# package.json の @playwright/test と必ず一致させること。
+ARG PLAYWRIGHT_VERSION=1.60.0
+
 # Install basic development tools and iptables/ipset
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
@@ -86,6 +90,16 @@ RUN npm install -g @openai/codex@latest
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# --- Playwright: システムライブラリ + Chromium をイメージへ焼き込む ---
+# build 時はネットワーク無制限なので CDN から取得できる。これにより
+# 実行時（firewall 有効）にブラウザを再ダウンロードする必要がなくなる。
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+USER root
+RUN npx -y playwright@${PLAYWRIGHT_VERSION} install-deps chromium \
+  && npx -y playwright@${PLAYWRIGHT_VERSION} install chromium \
+  && chmod -R a+rx /ms-playwright
+USER node
 
 # Copy and set up firewall script
 COPY init-firewall.sh /usr/local/bin/
