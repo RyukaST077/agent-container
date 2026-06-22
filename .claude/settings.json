@@ -81,5 +81,42 @@
   "env": {
     "CLAUDE_CODE_NO_FLICKER": "1",
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/consult-on-prompt.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking knowledge/ for this trouble..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/consult-on-failure.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/save-nudge-on-stop.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }

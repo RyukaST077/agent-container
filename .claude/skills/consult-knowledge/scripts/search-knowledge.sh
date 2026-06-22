@@ -70,7 +70,8 @@ fi
 RESULTS=()
 for f in "${FILES[@]}"; do
   base="$(basename "$f")"
-  [[ "$base" == "INDEX.md" ]] && continue
+  # Skip meta docs that aren't trouble reports (index / folder readme).
+  [[ "$base" == "INDEX.md" || "$base" == "README.md" ]] && continue
 
   distinct=0
   total=0
