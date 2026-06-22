@@ -1,0 +1,43 @@
+{
+  "name": "agent-container",
+  "version": "1.0.0",
+  "description": "Claude Code の「ナレッジループ」一式（skills + hooks + knowledge/ 雛形 + .devcontainer）をプロジェクトに導入するインストーラ",
+  "type": "module",
+  "bin": {
+    "agent-container": "bin/cli.mjs"
+  },
+  "files": [
+    "bin/",
+    ".claude/",
+    "knowledge/",
+    ".devcontainer/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/cli.mjs",
+    "dry-run": "node bin/cli.mjs --dry-run"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "skills",
+    "hooks",
+    "knowledge-base",
+    "scaffolding",
+    "installer"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RyukaST077/agent-container.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RyukaST077/agent-container/issues"
+  },
+  "homepage": "https://github.com/RyukaST077/agent-container#readme",
+  "author": "RyukaST077",
+  "license": "MIT"
+}
