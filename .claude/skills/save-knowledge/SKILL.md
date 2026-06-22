@@ -1,7 +1,6 @@
 ---
 name: save-knowledge
 description: Save a development trouble (error, build/startup failure, cannot-access, misconfiguration, etc.) as a structured knowledge report under the project's `knowledge/` folder. Auto-fills Context/Problem/Cause/Solution as much as possible from conversation history, git diffs, and related files, asks the user only for what is missing, and writes a searchable Markdown report. Trigger when the user says things like "save this trouble to knowledge", "record this error", "turn this into knowledge", "keep this as a learning", or "write a trouble report".
-argument-hint: "今回のトラブルを記録してなど"
 ---
 
 # Purpose
@@ -19,17 +18,6 @@ This skill does **not** handle:
 
 - Generic how-to / design notes (non-troubles) → write those as normal docs
 - Storing secrets (tokens, passwords, production connection info) → mask them in Phase 3
-
----
-
-## Argument
-
-| Position | Meaning                                                   | Example              |
-| -------- | --------------------------------------------------------- | -------------------- |
-| `$1`     | Free-text description of the trouble to record (optional) | `"vite won't start"` |
-
-If `$1` is empty, treat the **most recent trouble in the conversation** as the target.
-If no recent trouble is found, confirm with the user in Phase 0.
 
 ---
 
@@ -65,7 +53,7 @@ template). Keep these in English: error messages / logs / commands / code (verba
 ## Flow
 
 ```
-Phase 0: Identify target trouble  → decide "what to record" from $1 or recent conversation
+Phase 0: Identify target trouble  → decide "what to record" from this session's conversation history
 Phase 1: Auto-collect context     → gather material from conversation, git, related files
 Phase 2: Fill template fields     → auto-fill, then ask only for missing/uncertain fields
 Phase 3: Draft & approve          → show full report, confirm secret masking → approve
@@ -79,8 +67,10 @@ Do **not** write anything to disk (neither the knowledge file nor INDEX) before 
 
 ## Phase 0: Identify the target trouble
 
-1. If `$1` is given, use it as the headline of the target trouble.
-2. If `$1` is empty, review the **recent conversation**, phrase "which trouble to record" in one
+This skill takes **no arguments**. The target is always derived from **this session's
+conversation history**.
+
+1. Review the conversation history of the current session, phrase "which trouble to record" in one
    sentence, and confirm with the user:
 
    ```
@@ -89,8 +79,8 @@ Do **not** write anything to disk (neither the knowledge file nor INDEX) before 
    If you meant a different trouble, tell me what it is.
    ```
 
-3. If several troubles are candidates, list them and let the user pick one.
-4. If no trouble is found at all, ask: "Tell me the trouble you'd like to record."
+2. If several troubles are candidates, list them and let the user pick one.
+3. If no trouble is found in the conversation at all, ask: "Tell me the trouble you'd like to record."
 
 > The trouble need not be resolved — it's still worth recording as `status: unresolved` / `workaround`.
 
