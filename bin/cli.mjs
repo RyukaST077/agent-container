@@ -32,6 +32,15 @@ const AGENT_TARGETS = {
   both: [".claude", ".agents", ".codex"],
 };
 
+// 生成する agent ガイド（ナレッジループの起動導線）
+const DOC_START = "<!-- agent-container:knowledge-loop:start -->";
+const DOC_END = "<!-- agent-container:knowledge-loop:end -->";
+const DOC_TARGETS = {
+  claude: ["CLAUDE.md"],
+  codex: ["AGENTS.md"],
+  both: ["CLAUDE.md", "AGENTS.md"],
+};
+
 // インストーラ自身の成果物（誤コピー防止）
 const SELF_FILES = new Set([
   "bin",
@@ -65,6 +74,7 @@ if (argv.includes("--help") || argv.includes("-h")) {
 const FORCE = argv.includes("--force") || argv.includes("-f");
 const DRY = argv.includes("--dry-run") || argv.includes("-n");
 const QUIET = argv.includes("--quiet") || argv.includes("-q");
+const NO_DOCS = argv.includes("--no-docs");
 const AGENT = await resolveAgentChoice(argv);
 const COPY_TARGETS = [...AGENT_TARGETS[AGENT], ...COMMON_TARGETS];
 
@@ -94,6 +104,8 @@ for (const top of COPY_TARGETS) {
   if (!fs.existsSync(src)) continue;
   walkCopy(src, path.join(CWD, top));
 }
+
+if (!NO_DOCS) generateAgentDocs();
 
 printSummary();
 
@@ -238,6 +250,101 @@ function agentLabel(agent) {
   if (agent === "claude") return "Claude Code";
   if (agent === "codex") return "Codex";
   return "Claude Code + Codex";
+}
+
+// ---- agent docs (CLAUDE.md / AGENTS.md) -----------------------------------
+
+/**
+ * 選択した agent に応じて CLAUDE.md / AGENTS.md を生成（または管理ブロックを更新）。
+ */
+function generateAgentDocs() {
+  for (const filename of DOC_TARGETS[AGENT]) {
+    writeManagedDoc(filename);
+  }
+}
+
+/**
+ * マーカーで囲まれた「ナレッジループ」管理ブロックを組み立てる。
+ * AGENTS.md（Codex）はスキルの所在を明示し、起動導線になる。
+ */
+function docBlock(filename) {
+  const isCodex = filename === "AGENTS.md";
+  const skillsDir = isCodex ? ".agents/skills" : ".claude/skills";
+  const taskTool = isCodex ? "update_plan" : "TaskCreate / TaskUpdate";
+  const locationNote = isCodex
+    ? `スキル定義は \`${skillsDir}/<name>/SKILL.md\` にあります。下記トリガに該当したら、対応する SKILL.md を読み、その手順に従って実行してください。`
+    : `スキルは \`${skillsDir}/\` から自動で読み込まれます。下記トリガに該当すると自律的に起動します。`;
+
+  return [
+    DOC_START,
+    "## ナレッジループ（agent-container 自動生成 / このブロックは再実行で更新されます）",
+    "",
+    "このプロジェクトには開発トラブルを「記録して再利用する」ループが導入されています。",
+    "マーカー内は `npx agent-container` の再実行で上書きされます。手書きの追記はマーカーの外で行ってください。",
+    "",
+    "### スキルの読み込み",
+    locationNote,
+    "",
+    "### トラブルが起きたら（まず最初に）",
+    "ゼロから調査する前に、`knowledge/` に同じトラブルの解決記録がないか確認する。",
+    "- スキル: `consult-knowledge`",
+    '- 手動検索: `bash ' + skillsDir + '/consult-knowledge/scripts/search-knowledge.sh "<語1>" "<語2>"`',
+    "",
+    "### トラブルが解決したら",
+    "未記録の新しいトラブルは `save-knowledge` で `knowledge/YYYY-MM-DD-<slug>.md` に記録する。",
+    "",
+    "### その他のスキル",
+    "- `implement` … 実装計画書に沿って実装。" +
+      taskTool +
+      " でタスク管理し、最後に必ずシステムを起動して Playwright で動作確認する。",
+    "- `update-skill` … 既存スキルを安全に更新する。",
+    "",
+    "運用ルールの詳細は `knowledge/README.md` を参照。",
+    DOC_END,
+  ].join("\n");
+}
+
+/**
+ * 管理ブロックをファイルに反映する。
+ * - 無ければ見出し付きで新規作成
+ * - マーカーがあれば中身を差し替え（冪等）
+ * - マーカーが無ければ末尾に追記（既存の手書き内容は保持）
+ */
+function writeManagedDoc(filename) {
+  const dst = path.join(CWD, filename);
+  const rel = filename;
+  const block = docBlock(filename);
+
+  if (!fs.existsSync(dst)) {
+    const content =
+      `# ${filename}\n\n${agentLabel(AGENT)} 向けのプロジェクトガイド。\n\n${block}\n`;
+    if (!DRY) fs.writeFileSync(dst, content);
+    stats.created.push(rel);
+    log(`  ${green("write")} ${rel} ${dim("(ナレッジループ ガイド)")}`);
+    return;
+  }
+
+  const existing = fs.readFileSync(dst, "utf8");
+  const startIdx = existing.indexOf(DOC_START);
+  const endIdx = existing.indexOf(DOC_END);
+
+  let next;
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    next =
+      existing.slice(0, startIdx) + block + existing.slice(endIdx + DOC_END.length);
+  } else {
+    next = existing.replace(/\s*$/, "\n") + "\n" + block + "\n";
+  }
+
+  if (next === existing) {
+    stats.skipped.push(rel);
+    log(`  ${dim("skip ")} ${rel} ${dim("(ブロック差分なし)")}`);
+    return;
+  }
+
+  if (!DRY) fs.writeFileSync(dst, next);
+  stats.merged.push(rel);
+  log(`  ${cyan("merge")} ${rel} ${dim("(ナレッジループ ブロックを更新)")}`);
 }
 
 /**
@@ -559,6 +666,8 @@ USAGE
     Claude Code: .claude/skills/ .claude/hooks/ .claude/settings.json
     Codex:       .agents/skills/ .codex/hooks/ .codex/hooks.json .codex/config.toml
     Common:      knowledge/ .devcontainer/
+    ガイド:      CLAUDE.md（claude）/ AGENTS.md（codex）にナレッジループの
+                 管理ブロックを生成・更新（既存ファイルはブロックのみ更新）
 
 OPTIONS
   --agent <name>  claude / codex / both から選択（TTYでは未指定時に質問）
@@ -568,6 +677,7 @@ OPTIONS
   -f, --force     既存ファイルも上書きする
   -n, --dry-run   実際には書き込まず、変更内容だけ表示
   -q, --quiet     ログを抑制
+  --no-docs       CLAUDE.md / AGENTS.md の生成・更新を行わない
   -h, --help      このヘルプを表示
 `);
 }
