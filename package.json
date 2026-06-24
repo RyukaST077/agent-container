@@ -1,6 +1,6 @@
 {
   "name": "agent-container",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Claude Code / Codex の「ナレッジループ」一式（skills + hooks + knowledge/ 雛形 + .devcontainer）をプロジェクトに導入するインストーラ",
   "type": "module",
   "bin": {
