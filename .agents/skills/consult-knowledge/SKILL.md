@@ -93,8 +93,14 @@ Run the helper script with the extracted terms (it handles "folder missing / emp
 gracefully and ranks files by how many distinct terms they hit):
 
 ```
+# macOS / Linux (bash)
 bash .agents/skills/consult-knowledge/scripts/search-knowledge.sh "<term1>" "<term2>" "<term3>"
+
+# Windows (PowerShell)
+powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/consult-knowledge/scripts/search-knowledge.ps1 "<term1>" "<term2>" "<term3>"
 ```
+
+> Use the `.ps1` variant on Windows / PowerShell and the `.sh` variant on macOS / Linux. Both behave identically and the PowerShell version needs no `jq` / `grep`.
 
 Interpreting its output:
 
@@ -106,8 +112,13 @@ Interpreting its output:
 Fallback if the script can't run:
 
 ```
+# bash (macOS / Linux)
 grep -ril "<error token>" knowledge/        # find files mentioning the error
 grep -ri  "<keyword>"     knowledge/INDEX.md # scan the index by keyword/tag
+
+# PowerShell (Windows)
+Get-ChildItem knowledge -Filter *.md -Recurse | Select-String -SimpleMatch "<error token>" -List | ForEach-Object Path
+Select-String -Path knowledge/INDEX.md -SimpleMatch "<keyword>"
 ```
 
 ---

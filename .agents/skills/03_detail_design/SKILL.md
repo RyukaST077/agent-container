@@ -50,7 +50,7 @@ user-invocable: true
 最初の回答に必ず含める：
 
 - **(a) 理解したことの要約**（対象機能、データ構造の概要、主要な画面・IF）
-- **(b) 不足情報の質問**（優先度付き。AskUserQuestion で1ターンにまとめて聞く）
+- **(b) 不足情報の質問**（優先度付き。request_user_input（利用可能な場合）で1ターンにまとめて聞く）
 - **(c) 作成計画**（どの順序で、どのドキュメントから着手するか）
 
 あわせて **確認ゲート0** をユーザに確認する：対象機能の範囲（全量 or 一部）／移行データの有無／外部連携先の仕様確定状況。
@@ -80,10 +80,10 @@ user-invocable: true
 
    ```bash
    # macOS / Linux (bash)
-   bash .claude/skills/03_detail_design/scripts/check_traceability.sh [docsルート]
+   bash .agents/skills/03_detail_design/scripts/check_traceability.sh [docsルート]
 
    # Windows (PowerShell)
-   powershell -NoProfile -ExecutionPolicy Bypass -File .claude/skills/03_detail_design/scripts/check_traceability.ps1 [docsルート]
+   powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/03_detail_design/scripts/check_traceability.ps1 [docsルート]
    ```
 
    > `.ps1` は Windows / PowerShell 用、`.sh` は macOS / Linux 用。挙動は同一で、PowerShell 版は `grep` / `wc` 不要。

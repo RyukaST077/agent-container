@@ -26,7 +26,7 @@ user-invocable: true
 ## 絶対ルール
 
 1. **要件とのトレーサビリティを維持する。** すべての設計判断は BREQ/FR/NFR/CON に紐付ける。
-2. **不明点は必ず質問する。** 技術選定の根拠、非機能要件の数値目標、外部連携仕様など重要な不明点は推測で確定しない。確認ゲートでは AskUserQuestion を使い、選択肢付きでまとめて聞く。
+2. **不明点は必ず質問する。** 技術選定の根拠、非機能要件の数値目標、外部連携仕様など重要な不明点は推測で確定しない。確認ゲートでは request_user_input（利用可能な場合）を使い、選択肢付きでまとめて聞く。
 3. ただし、プロジェクト初期段階で決定困難なものは **「要検討（TBD）」「仮置き（ASSUMPTION）」として明示** し、決定時期の目安を併記する。
 4. **ADR（Architecture Decision Record）形式** で重要な技術選定理由を記録する（コンテキスト/決定/結果）。
 5. **図は必ず Mermaid 形式で。** C4モデル（Context/Container）、シーケンス図、ER図など。
@@ -50,7 +50,7 @@ user-invocable: true
 
 ## 進め方（フェーズ制・ゲート方式）
 
-各フェーズ末尾の **確認ゲート** では AskUserQuestion でユーザ合意を取ってから次へ進む。聞くべき質問の詳細リストは `references/question-checklists.md` を参照。
+各フェーズ末尾の **確認ゲート** では request_user_input（利用可能な場合）でユーザ合意を取ってから次へ進む。聞くべき質問の詳細リストは `references/question-checklists.md` を参照。
 
 ### フェーズ0：セットアップ
 
@@ -96,7 +96,7 @@ user-invocable: true
 トレーサビリティの機械チェックを実行し、結果を最終レポートに含める：
 
 ```bash
-python3 .claude/skills/02_plan/scripts/check_traceability.py docs/01_Project_Design
+python3 .agents/skills/02_plan/scripts/check_traceability.py docs/01_Project_Design
 ```
 
 > Windows / PowerShell では `python3` が無い場合があります。`python` または `py` に読み替えてください。

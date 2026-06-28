@@ -75,6 +75,8 @@ const FORCE = argv.includes("--force") || argv.includes("-f");
 const DRY = argv.includes("--dry-run") || argv.includes("-n");
 const QUIET = argv.includes("--quiet") || argv.includes("-q");
 const NO_DOCS = argv.includes("--no-docs");
+// フックを動かすシェル。Windows は既定で PowerShell、その他は bash。
+const SHELL = resolveShell(argv);
 const AGENT = await resolveAgentChoice(argv);
 const COPY_TARGETS = [...AGENT_TARGETS[AGENT], ...COMMON_TARGETS];
 
@@ -96,6 +98,7 @@ log(bold(cyan("\n  agent-container — Agent ナレッジループ導入\n")));
 log(dim(`  source: ${PKG_ROOT}`));
 log(dim(`  target: ${CWD}`));
 log(dim(`  agent:  ${agentLabel(AGENT)}`));
+log(dim(`  shell:  ${SHELL === "powershell" ? "PowerShell (.ps1)" : "bash (.sh)"}`));
 if (DRY) log(yellow("  (dry-run: 実際の書き込みは行いません)"));
 log("");
 
@@ -136,12 +139,13 @@ function walkCopy(src, dst) {
   const isCodexHooks = rel === path.join(".codex", "hooks.json");
   const isCodexConfig = rel === path.join(".codex", "config.toml");
 
-  if (isClaudeSettings && fs.existsSync(dst)) {
-    mergeSettingsFile(src, dst, rel);
+  // hooks を含む設定ファイルは、選択シェルに合わせて command を書き換えて反映する。
+  if (isClaudeSettings) {
+    handleClaudeSettings(src, dst, rel);
     return;
   }
-  if (isCodexHooks && fs.existsSync(dst)) {
-    mergeCodexHooksFile(src, dst, rel);
+  if (isCodexHooks) {
+    handleCodexHooks(src, dst, rel);
     return;
   }
   if (isCodexConfig && fs.existsSync(dst)) {
@@ -158,7 +162,7 @@ function walkCopy(src, dst) {
   const existed = fs.existsSync(dst);
   if (!DRY) {
     fs.mkdirSync(path.dirname(dst), { recursive: true });
-    fs.copyFileSync(src, dst);
+    writeCopiedFile(src, dst);
     maybeChmod(dst, rel);
   } else {
     maybeChmod(dst, rel, /*dryOnly*/ true);
@@ -264,6 +268,17 @@ function generateAgentDocs() {
 }
 
 /**
+ * 手動検索コマンドのヒントを、選択シェルに合わせて組み立てる。
+ */
+function manualSearchHint(skillsDir) {
+  const base = `${skillsDir}/consult-knowledge/scripts/search-knowledge`;
+  if (SHELL === "powershell") {
+    return `\`powershell -NoProfile -ExecutionPolicy Bypass -File ${base}.ps1 "<語1>" "<語2>"\``;
+  }
+  return `\`bash ${base}.sh "<語1>" "<語2>"\``;
+}
+
+/**
  * マーカーで囲まれた「ナレッジループ」管理ブロックを組み立てる。
  * AGENTS.md（Codex）はスキルの所在を明示し、起動導線になる。
  */
@@ -288,7 +303,7 @@ function docBlock(filename) {
     "### トラブルが起きたら（まず最初に）",
     "ゼロから調査する前に、`knowledge/` に同じトラブルの解決記録がないか確認する。",
     "- スキル: `consult-knowledge`",
-    '- 手動検索: `bash ' + skillsDir + '/consult-knowledge/scripts/search-knowledge.sh "<語1>" "<語2>"`',
+    "- 手動検索: " + manualSearchHint(skillsDir),
     "",
     "### トラブルが解決したら",
     "未記録の新しいトラブルは `save-knowledge` で `knowledge/YYYY-MM-DD-<slug>.md` に記録する。",
@@ -367,6 +382,9 @@ function mergeSettingsFile(src, dst, rel) {
     log(`  ${yellow("warn ")} ${rel} 配布元の JSON 解析に失敗: ${e.message}`);
     return;
   }
+  if (incoming && incoming.hooks) {
+    incoming = { ...incoming, hooks: platformizeHooks(incoming.hooks) };
+  }
   try {
     existing = JSON.parse(fs.readFileSync(dst, "utf8"));
   } catch (e) {
@@ -403,6 +421,9 @@ function mergeCodexHooksFile(src, dst, rel) {
     log(`  ${yellow("warn ")} ${rel} 配布元の JSON 解析に失敗: ${e.message}`);
     return;
   }
+  if (incoming && incoming.hooks) {
+    incoming = { ...incoming, hooks: platformizeHooks(incoming.hooks) };
+  }
   try {
     existing = JSON.parse(fs.readFileSync(dst, "utf8"));
   } catch (e) {
@@ -427,6 +448,161 @@ function mergeCodexHooksFile(src, dst, rel) {
   }
   stats.merged.push(rel);
   log(`  ${cyan("merge")} ${rel} ${dim("(hooks を追記)")}`);
+}
+
+// ---- shell / hooks platformization ----------------------------------------
+
+/**
+ * フックを動かすシェルを解決する。
+ * 優先度: --shell/--bash/--powershell > AGENT_CONTAINER_SHELL > プラットフォーム既定。
+ * 既定は Windows なら powershell、その他は bash。
+ */
+function resolveShell(args) {
+  let selected = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--shell") {
+      selected = args[i + 1] || "";
+      i++;
+    } else if (arg.startsWith("--shell=")) {
+      selected = arg.slice("--shell=".length);
+    } else if (arg === "--powershell" || arg === "--pwsh") {
+      selected = "powershell";
+    } else if (arg === "--bash") {
+      selected = "bash";
+    }
+  }
+  if (!selected && process.env.AGENT_CONTAINER_SHELL) {
+    selected = process.env.AGENT_CONTAINER_SHELL;
+  }
+
+  if (selected) {
+    const n = String(selected).trim().toLowerCase();
+    if (["powershell", "pwsh", "ps", "windows", "win"].includes(n)) return "powershell";
+    if (["bash", "sh", "posix", "unix"].includes(n)) return "bash";
+    console.error(yellow(`ERROR: --shell は bash / powershell のいずれかを指定してください: ${selected}`));
+    process.exit(2);
+  }
+
+  return process.platform === "win32" ? "powershell" : "bash";
+}
+
+/**
+ * bash 用フックコマンドを、選択シェルに合わせて書き換える。
+ * 既知の自前フック（.claude/hooks/*.sh, .codex/hooks/*.sh）だけを対象にし、
+ * ユーザ独自のコマンドには手を加えない。
+ */
+function toPowershellCommand(command) {
+  if (typeof command !== "string") return command;
+
+  // Claude: bash "$CLAUDE_PROJECT_DIR/.claude/hooks/<name>.sh"
+  //   -> Claude Code が $CLAUDE_PROJECT_DIR を実パスに展開する。
+  let m = command.match(
+    /^bash\s+"\$\{?CLAUDE_PROJECT_DIR\}?\/(.+?)\.sh"\s*$/
+  );
+  if (m) {
+    return `powershell -NoProfile -ExecutionPolicy Bypass -File "$CLAUDE_PROJECT_DIR/${m[1]}.ps1"`;
+  }
+
+  // Codex: bash "$(git rev-parse --show-toplevel)/.codex/hooks/<name>.sh"
+  //   -> PowerShell の部分式でリポジトリルートを解決する。
+  m = command.match(
+    /^bash\s+"\$\(git rev-parse --show-toplevel\)\/(.+?)\.sh"\s*$/
+  );
+  if (m) {
+    return `powershell -NoProfile -ExecutionPolicy Bypass -Command "& (Join-Path (git rev-parse --show-toplevel) '${m[1]}.ps1')"`;
+  }
+
+  return command;
+}
+
+/**
+ * hooks ツリー（{ event: [ { matcher?, hooks: [ { type, command } ] } ] }）の
+ * command を選択シェル向けに書き換える。bash 選択時は無変換。
+ */
+function platformizeHooks(hooksObj) {
+  if (SHELL !== "powershell" || !hooksObj || typeof hooksObj !== "object") {
+    return hooksObj;
+  }
+  const out = {};
+  for (const [event, entries] of Object.entries(hooksObj)) {
+    const list = Array.isArray(entries) ? entries : [];
+    out[event] = list.map((entry) => ({
+      ...entry,
+      hooks: (Array.isArray(entry.hooks) ? entry.hooks : []).map((h) =>
+        h && h.type === "command" && typeof h.command === "string"
+          ? { ...h, command: toPowershellCommand(h.command) }
+          : h
+      ),
+    }));
+  }
+  return out;
+}
+
+/**
+ * .claude/settings.json を反映する。既存なら安全マージ、無ければ新規作成。
+ * いずれも hooks の command を選択シェル向けに書き換える。
+ */
+function handleClaudeSettings(src, dst, rel) {
+  if (fs.existsSync(dst)) {
+    mergeSettingsFile(src, dst, rel);
+    return;
+  }
+  let incoming;
+  try {
+    incoming = JSON.parse(fs.readFileSync(src, "utf8"));
+  } catch (e) {
+    log(`  ${yellow("warn ")} ${rel} 配布元の JSON 解析に失敗: ${e.message}`);
+    return;
+  }
+  if (incoming && incoming.hooks) {
+    incoming = { ...incoming, hooks: platformizeHooks(incoming.hooks) };
+  }
+  writeFreshJson(dst, rel, incoming);
+}
+
+/**
+ * .codex/hooks.json を反映する。既存なら安全マージ、無ければ新規作成。
+ */
+function handleCodexHooks(src, dst, rel) {
+  if (fs.existsSync(dst)) {
+    mergeCodexHooksFile(src, dst, rel);
+    return;
+  }
+  let incoming;
+  try {
+    incoming = JSON.parse(fs.readFileSync(src, "utf8"));
+  } catch (e) {
+    log(`  ${yellow("warn ")} ${rel} 配布元の JSON 解析に失敗: ${e.message}`);
+    return;
+  }
+  if (incoming && incoming.hooks) {
+    incoming = { ...incoming, hooks: platformizeHooks(incoming.hooks) };
+  }
+  writeFreshJson(dst, rel, incoming);
+}
+
+function writeFreshJson(dst, rel, obj) {
+  if (!DRY) {
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.writeFileSync(dst, JSON.stringify(obj, null, 2) + "\n");
+  }
+  stats.created.push(rel);
+  const note = SHELL === "powershell" ? dim(" (PowerShell hooks)") : "";
+  log(`  ${green("write")} ${rel}${note}`);
+}
+
+/**
+ * 通常ファイルを書き出す。.ps1 は Windows PowerShell 5.1 が日本語を正しく
+ * 読めるよう UTF-8 BOM 付きで書き出す。
+ */
+function writeCopiedFile(src, dst) {
+  if (dst.endsWith(".ps1")) {
+    const text = fs.readFileSync(src, "utf8").replace(/^﻿/, "");
+    fs.writeFileSync(dst, "﻿" + text);
+    return;
+  }
+  fs.copyFileSync(src, dst);
 }
 
 /**
@@ -584,12 +760,26 @@ function mergeSettings(existing, incoming) {
 }
 
 /**
- * hooks をイベント単位でマージ。エントリ単位で重複排除（同一 command の連発を防ぐ）。
+ * hooks をイベント単位でマージ。
+ * - 完全一致のエントリは重複排除（同一 command の連発を防ぐ）。
+ * - 同じ自前フックの「別シェル版」（bash<->powershell / .sh<->.ps1）が既存にあれば
+ *   取り除いてから取り込む。これにより --shell を切り替えて再実行しても二重登録に
+ *   ならず、選択したシェルの command に更新される（ユーザのカスタムフックは保持）。
  */
 function mergeHooks(existing = {}, incoming = {}) {
   const out = { ...existing };
   for (const [event, inEntries] of Object.entries(incoming)) {
-    const cur = Array.isArray(out[event]) ? out[event].slice() : [];
+    let cur = Array.isArray(out[event]) ? out[event].slice() : [];
+
+    // 取り込む自前フックの論理 ID（matcher + スクリプト名、シェル非依存）。
+    const incomingIds = new Set(inEntries.map(logicalHookId).filter(Boolean));
+    // 同じ論理 ID を持つ既存エントリは、完全一致するものだけ残す（別シェル版は除去）。
+    cur = cur.filter((entry) => {
+      const id = logicalHookId(entry);
+      if (!id || !incomingIds.has(id)) return true; // 無関係／ユーザ独自フックは保持
+      return inEntries.some((ie) => entrySignature(ie) === entrySignature(entry));
+    });
+
     const seen = new Set(cur.map(entrySignature));
     for (const entry of inEntries) {
       const sig = entrySignature(entry);
@@ -607,6 +797,23 @@ function entrySignature(entry) {
   // matcher + 各 hook の command で同一性を判定
   const cmds = (entry.hooks || []).map((h) => `${h.type}:${h.command}`);
   return JSON.stringify({ matcher: entry.matcher || "", cmds });
+}
+
+/**
+ * 自前フックを「matcher + スクリプト名」でシェル非依存に識別する論理 ID。
+ * 例: bash/.sh 版も powershell/.ps1 版も同じ ID になる。自前フックでなければ null。
+ */
+function logicalHookId(entry) {
+  const id = (entry.hooks || [])
+    .map((h) => h && hookScriptId(h.command))
+    .find(Boolean);
+  return id ? `${entry.matcher || ""}::${id}` : null;
+}
+
+function hookScriptId(command) {
+  if (typeof command !== "string") return null;
+  const m = command.match(/(\.(?:claude|codex)\/hooks\/[A-Za-z0-9_-]+)\.(?:sh|ps1)/);
+  return m ? m[1] : null;
 }
 
 /**
@@ -666,6 +873,8 @@ USAGE
     Claude Code: .claude/skills/ .claude/hooks/ .claude/settings.json
     Codex:       .agents/skills/ .codex/hooks/ .codex/hooks.json .codex/config.toml
     Common:      knowledge/ .devcontainer/
+    フック:      .sh（bash）と .ps1（PowerShell）の両方を展開し、設定ファイルの
+                 command は選択シェルに合わせて自動で書き換えます（Windows 既定: PowerShell）
     ガイド:      CLAUDE.md（claude）/ AGENTS.md（codex）にナレッジループの
                  管理ブロックを生成・更新（既存ファイルはブロックのみ更新）
 
@@ -674,6 +883,10 @@ OPTIONS
   --claude        --agent claude と同じ
   --codex         --agent codex と同じ
   --both          --agent both と同じ
+  --shell <name>  フックのシェルを bash / powershell から指定
+                  （既定: Windows は powershell、その他は bash）
+  --powershell    --shell powershell と同じ（Windows 向け）
+  --bash          --shell bash と同じ
   -f, --force     既存ファイルも上書きする
   -n, --dry-run   実際には書き込まず、変更内容だけ表示
   -q, --quiet     ログを抑制

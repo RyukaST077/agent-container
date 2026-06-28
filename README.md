@@ -37,6 +37,8 @@ npx github:RyukaST077/agent-container --agent both
 |------------|------|
 | `--agent <name>` | 導入対象を `claude` / `codex` / `both` から指定 |
 | `--claude`, `--codex`, `--both` | `--agent` の短縮指定 |
+| `--shell <name>` | フックのシェルを `bash` / `powershell` から指定（既定: Windows は `powershell`、その他は `bash`） |
+| `--powershell`, `--bash` | `--shell` の短縮指定 |
 | `--dry-run`, `-n` | 実際には書き込まず、変更内容だけ表示 |
 | `--force`, `-f`   | 既存ファイルも上書きする |
 | `--quiet`, `-q`   | ログを抑制 |
@@ -54,10 +56,34 @@ Codex 用だけ確認する場合:
 npx github:RyukaST077/agent-container --agent codex --dry-run
 ```
 
+## Windows / PowerShell 対応
+
+フックは **bash 版（`.sh`）と PowerShell 版（`.ps1`）の両方**を同梱しています。
+どちらも同じ挙動で、PowerShell 版は `jq` / `grep` などの外部コマンドに依存しません
+（Windows PowerShell 5.1 / PowerShell 7+ で動作）。
+
+インストール時に環境を判定し、設定ファイル（`.claude/settings.json` / `.codex/hooks.json`）の
+フック呼び出しを選択シェル向けに自動で書き換えます。
+
+- **Windows**: 既定で PowerShell 版を使う設定を書き込みます。
+- **macOS / Linux**: 既定で bash 版を使います。
+- 明示する場合は `--powershell` / `--bash`（または `--shell <name>`）を指定します。
+
+```bash
+npx github:RyukaST077/agent-container --both --powershell   # Windows 想定
+```
+
+シェルを切り替えて再実行しても二重登録にはならず、選択したシェルの呼び出しに更新されます
+（ユーザが自分で追加したフックは保持されます）。
+
+> 注: Windows の Claude Code は Git for Windows があると bash、無いと PowerShell でフックを実行します。
+> bash 経路でも Git Bash には `jq` が同梱されないため、Windows では PowerShell 版の利用を推奨します。
+
 ## 動作要件
 
 - Node.js >= 16（`npx` 同梱）
 - 追加の npm 依存はありません（Node 標準モジュールのみ）
+- フック実行時のシェル: bash 経路は `bash` / `jq` / `grep`、PowerShell 経路は追加依存なし
 
 ## 導入後
 

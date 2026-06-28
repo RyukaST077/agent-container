@@ -150,11 +150,16 @@ How:
 1. Generate the save path deterministically (handles `knowledge/` creation, date prefix, collisions):
 
    ```
+   # macOS / Linux (bash)
    bash .claude/skills/save-knowledge/scripts/new-knowledge.sh "<slug>"
+
+   # Windows (PowerShell)
+   powershell -NoProfile -ExecutionPolicy Bypass -File .claude/skills/save-knowledge/scripts/new-knowledge.ps1 "<slug>"
    ```
 
+   - Use the `.ps1` variant on Windows / PowerShell and the `.sh` variant on macOS / Linux. Both behave identically.
    - It prints `knowledge/YYYY-MM-DD-<slug>.md` to stdout. Use that as the save path.
-   - If the script can't run, create `knowledge/` manually and build the filename with `date +%F`.
+   - If the script can't run, create `knowledge/` manually and build the filename with `date +%F` (bash) or `Get-Date -Format yyyy-MM-dd` (PowerShell).
 
 2. `Write` the final content (all `{{...}}` replaced with real values) to that path.
    - Verify the YAML frontmatter is intact (two `---` lines, valid array syntax).
