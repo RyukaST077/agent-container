@@ -14,9 +14,8 @@ knowledge/
 ```
 
 各報告書は YAML frontmatter（検索タグ）＋ 9セクション（背景 / 問題 / 原因 / 解決策 / 検証 /
-再発防止 / 検索タグ …）の固定フォーマット。テンプレートは導入対象に応じて
-`.claude/skills/save-knowledge/templates/knowledge-report.md` または
-`.agents/skills/save-knowledge/templates/knowledge-report.md`。
+再発防止 / 検索タグ …）の固定フォーマット。テンプレートは
+`.claude/skills/save-knowledge/templates/knowledge-report.md`。
 
 > `2026-06-22-spring-boot-port-8080-in-use.md` は**フォーマット例の初期サンプル**です。
 > 実エントリが溜まったら削除して構いません。
@@ -37,7 +36,7 @@ knowledge/
 ## 自動で回す仕組み（hooks）
 
 スキルは本来「エージェントが自発的に気づいたら発火」ですが、それを取りこぼさないよう
-Claude Code では `.claude/hooks/`、Codex では `.codex/hooks/` の3つのフックが発火を後押しします。
+Claude Code の `.claude/hooks/` にある3つのフックが発火を後押しします。
 
 | hook | イベント | 動き |
 |------|----------|------|
@@ -46,18 +45,14 @@ Claude Code では `.claude/hooks/`、Codex では `.codex/hooks/` の3つのフ
 | `save-nudge-on-stop.sh` | Stop | マーカーがあればターン終了時に **save-knowledge** を1回だけ提案（セッションID照合で持ち越し防止） |
 
 - フックは**ヒントを出すだけ**で、作業をブロックしたりループさせたりしません。
-- うるさい / 不要なら `.claude/settings.json` または `.codex/hooks.json` の該当エントリを外せば無効化できます。
-- Codex の reasoning / memory / permissions は `.codex/config.toml` に入ります。
-- マーカーは `.claude/.cache/knowledge/` または `.codex/.cache/knowledge/`（git管理外）に置かれます。
+- うるさい / 不要なら `.claude/settings.json` の該当エントリを外せば無効化できます。
+- マーカーは `.claude/.cache/knowledge/`（git管理外）に置かれます。
 
 ## 手で使うとき
 
 ```bash
 # 検索（consult-knowledge が内部で使うスクリプト。直接叩いてもよい）
 bash .claude/skills/consult-knowledge/scripts/search-knowledge.sh "EADDRINUSE" "port" "ポート競合"
-
-# Codex 用だけ導入した場合
-bash .agents/skills/consult-knowledge/scripts/search-knowledge.sh "EADDRINUSE" "port" "ポート競合"
 
 # ざっくりgrep
 grep -ri "8080" knowledge/

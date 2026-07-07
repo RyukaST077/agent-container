@@ -95,9 +95,6 @@ add_domain_ips() {
 
 # Required domains
 for domain in \
-    "auth.openai.com" \
-    "api.openai.com" \
-    "chatgpt.com" \
     "registry.npmjs.org" \
     "api.anthropic.com" \
     "downloads.claude.ai" \

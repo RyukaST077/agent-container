@@ -46,8 +46,8 @@ RUN mkdir /commandhistory \
 ENV DEVCONTAINER=true
 
 # Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/node/.claude /home/node/.codex && \
-  chown -R node:node /workspace /home/node/.claude /home/node/.codex
+RUN mkdir -p /workspace /home/node/.claude && \
+  chown -R node:node /workspace /home/node/.claude
 
 WORKDIR /workspace
 
@@ -84,14 +84,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
 
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
-
-# Install Codex
-RUN npm install -g @openai/codex@latest
-
-# Codexのサンドボックス用
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends bubblewrap \
-    && rm -rf /var/lib/apt/lists/*
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/

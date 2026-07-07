@@ -1,7 +1,7 @@
 {
   "name": "agent-container",
   "version": "0.1.0",
-  "description": "Claude Code / Codex の「ナレッジループ」一式（skills + hooks + knowledge/ 雛形 + .devcontainer）をプロジェクトに導入するインストーラ",
+  "description": "Claude Code の「ナレッジループ」一式（skills + hooks + knowledge/ 雛形 + .devcontainer）をプロジェクトに導入するインストーラ",
   "type": "module",
   "bin": {
     "agent-container": "bin/cli.mjs"
@@ -12,11 +12,6 @@
     ".claude/settings.json",
     ".claude/hooks/",
     ".claude/skills/",
-    ".agents/",
-    ".codex/.gitignore",
-    ".codex/config.toml",
-    ".codex/hooks.json",
-    ".codex/hooks/",
     "knowledge/",
     ".devcontainer/",
     "README.md",
@@ -32,8 +27,6 @@
   "keywords": [
     "claude-code",
     "claude",
-    "codex",
-    "openai-codex",
     "skills",
     "hooks",
     "knowledge-base",
