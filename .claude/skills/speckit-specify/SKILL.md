@@ -105,6 +105,7 @@ with the typed feature description as the input.
 
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -147,7 +148,11 @@ Given that feature description, do this:
 
    **Create the directory and spec file**:
    - `mkdir -p SPECIFY_FEATURE_DIRECTORY`
-   - Resolve the active `spec-template` through the Spec Kit preset/template resolution stack (equivalent to `specify preset resolve spec-template`)
+   - Resolve the active `spec-template` (first match wins — same priority order as the `resolve_template()` stack used by the sibling skills' scripts):
+     1. `.specify/templates/overrides/spec-template.md` — project override (highest priority)
+     2. A `spec-template` resolved by an installed Spec Kit preset or extension (`.specify/presets/*/templates/`, `.specify/extensions/*/templates/`), if any
+     3. `.specify/templates/spec-template.md` — project copy
+     4. The template bundled with this skill at `reference/spec-template.md` (relative to this SKILL.md). This keeps the skill self-contained and runnable without any external `.specify/` template.
    - Copy the resolved `spec-template` file to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point
    - Set `SPEC_FILE` to `SPECIFY_FEATURE_DIRECTORY/spec.md`
    - Persist the resolved path to `.specify/feature.json`:
@@ -164,7 +169,7 @@ Given that feature description, do this:
    - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
    - The spec directory and file are always created by this command, never by the hook
 
-4. Load the resolved active `spec-template` file to understand required sections.
+4. Load the resolved active `spec-template` file (the bundled `reference/spec-template.md`, or a project override if present) to understand required sections.
 
 5. **IF EXISTS**: Load `.specify/memory/constitution.md` for project principles and governance constraints.
 
@@ -194,9 +199,9 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-6. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+7. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-7. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+8. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `SPECIFY_FEATURE_DIRECTORY/checklists/requirements.md` using the checklist template structure with these validation items:
 
@@ -310,6 +315,7 @@ Check if `.specify/extensions.yml` exists in the project root.
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks

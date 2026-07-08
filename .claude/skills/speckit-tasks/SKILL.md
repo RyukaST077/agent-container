@@ -52,11 +52,12 @@ You **MUST** consider the user input before proceeding (if not empty).
     
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
 
-1. **Setup**: Run `.specify/scripts/bash/setup-tasks.sh --json` from repo root and parse FEATURE_DIR, TASKS_TEMPLATE, and AVAILABLE_DOCS list. `FEATURE_DIR` and `TASKS_TEMPLATE` must be absolute paths when provided. `AVAILABLE_DOCS` is a list of document names/relative paths available under `FEATURE_DIR` (for example `research.md` or `contracts/`). For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run the setup-tasks script from repo root and parse FEATURE_DIR, TASKS_TEMPLATE, and AVAILABLE_DOCS list. Prefer the project script `.specify/scripts/bash/setup-tasks.sh --json` if it exists; otherwise fall back to the copy bundled with this skill at `scripts/setup-tasks.sh --json` (relative to this SKILL.md), which keeps the skill self-contained. (Both still resolve per-project state — `.specify/feature.json`, templates — via the project's `.specify/` directory.) `FEATURE_DIR` and `TASKS_TEMPLATE` must be absolute paths when provided. `AVAILABLE_DOCS` is a list of document names/relative paths available under `FEATURE_DIR` (for example `research.md` or `contracts/`). For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load design documents**: Read from FEATURE_DIR:
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
@@ -75,19 +76,21 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Create parallel execution examples per user story
    - Validate task completeness (each user story has all needed tasks, independently testable)
 
-4. **Generate tasks.md**: Read the tasks template from TASKS_TEMPLATE (from the JSON output above) and use it as structure. If TASKS_TEMPLATE is empty, fall back to `.specify/templates/tasks-template.md`. Fill with:
+4. **Generate tasks.md**: Read the tasks template from TASKS_TEMPLATE (from the JSON output above) and use it as structure. If TASKS_TEMPLATE is empty or the file is missing, use the template bundled with this skill at `reference/tasks-template.md` (relative to this SKILL.md) — an empty TASKS_TEMPLATE means the setup script already searched every project template location without success. Fill with:
    - Correct feature name from plan.md
    - Phase 1: Setup tasks (project initialization)
    - Phase 2: Foundational tasks (blocking prerequisites for all user stories)
    - Phase 3+: One phase per user story (in priority order from spec.md)
    - Each phase includes: story goal, independent test criteria, tests (if requested), implementation tasks
-   - Final Verification Phase: Playwright E2E screen tests confirming each user story works through the UI (always generated for UI features)
-   - Final Phase: Polish & cross-cutting concerns
+   - Polish phase: Polish & cross-cutting concerns
+   - Final Verification Phase (ALWAYS the last phase, after Polish): Playwright E2E screen tests confirming each user story works through the UI (always generated for UI features)
    - All tasks must follow the strict checklist format (see Task Generation Rules below)
    - Clear file paths for each task
    - Dependencies section showing story completion order
    - Parallel execution examples per story
    - Implementation strategy section (MVP first, incremental delivery)
+
+5. **Update backlog**: If `specs/backlog.md` exists and this feature has a row there, mark the unit's **Tasks** column done (mirrors how `/speckit-specify` and `/speckit-plan` maintain their columns).
 
 ## Mandatory Post-Execution Hooks
 
@@ -111,6 +114,7 @@ Check if `.specify/extensions.yml` exists in the project root.
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
@@ -164,6 +168,7 @@ Every task MUST strictly follow this format:
    - Foundational phase: NO story label  
    - User Story phases: MUST have story label
    - Polish phase: NO story label
+   - Final Verification phase: MUST have the story label of the user story being verified (the run-full-suite task has NO story label)
 5. **Description**: Clear action with exact file path
 
 **Examples**:
@@ -209,15 +214,16 @@ Every task MUST strictly follow this format:
 - **Phase 3+**: User Stories in priority order (P1, P2, P3...)
   - Within each story: Tests (if requested) → Models → Services → Endpoints → Integration
   - Each phase should be a complete, independently testable increment
-- **Final Verification Phase**: End-to-end verification that the implemented feature works (ALWAYS generated)
+- **Polish Phase**: Polish & Cross-Cutting Concerns
+- **Final Verification Phase (ALWAYS the last phase)**: End-to-end verification that the implemented feature works (ALWAYS generated; runs after Polish as the final gate)
   - For UI features: Playwright screen tests (`e2e/*.spec.ts`) covering each user story's primary acceptance scenario — launch the app, drive the browser, assert on the rendered screen
-  - One verification task per user story acceptance scenario, plus a task to run the full Playwright suite and confirm all pass
+  - One verification task per user story acceptance scenario (labeled with that story's [USn]), plus a task to run the full Playwright suite and confirm all pass (no story label)
   - For non-UI projects: substitute an equivalent end-to-end execution check
-- **Final Phase**: Polish & Cross-Cutting Concerns
 
 ## Done When
 
 - [ ] tasks.md generated with all phases, task IDs, and file paths
 - [ ] A Final Verification Phase is present with Playwright E2E screen-test tasks (for UI features) covering each user story's primary acceptance scenario, or an equivalent end-to-end check for non-UI projects
+- [ ] Backlog updated: the unit's **Tasks** column marked done in `specs/backlog.md` (if the backlog exists and has a row for this feature)
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with task count, story breakdown, and MVP scope

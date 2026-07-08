@@ -2,7 +2,7 @@
 name: "speckit-clarify"
 description: "Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec."
 argument-hint: "Optional areas to clarify in the spec"
-compatibility: "Requires spec-kit project structure with .specify/ directory"
+compatibility: "Requires a feature created by /speckit-specify (.specify/feature.json); scripts are bundled, no .specify/scripts/ needed"
 metadata:
   author: "github-spec-kit"
   source: "templates/commands/clarify.md"
@@ -52,6 +52,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -62,7 +63,7 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 Execution steps:
 
-1. Run `.specify/scripts/bash/check-prerequisites.sh --json --paths-only` from repo root **once** (combined `--json --paths-only` mode / `-Json -PathsOnly`). Parse minimal JSON payload fields:
+1. Run the check-prerequisites script from repo root **once** with `--json --paths-only` (combined mode / `-Json -PathsOnly`). Prefer the project script `.specify/scripts/bash/check-prerequisites.sh` if it exists; otherwise fall back to the copy bundled with this skill at `scripts/check-prerequisites.sh` (relative to this SKILL.md), which keeps the skill self-contained. (Both still resolve per-project state — `.specify/feature.json` — via the project's `.specify/` directory.) Parse minimal JSON payload fields:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)
@@ -209,7 +210,7 @@ Execution steps:
      1. Read the checklist file.
      2. Identify all GitHub task-list checkbox lines — lines matching `- [ ]`, `- [x]`, or `- [X]` (case-insensitive, tolerant of leading whitespace for nested items) outside of code fences. Ignore all other content (headings, notes, non-checkbox bullets, metadata).
      3. For each checkbox line, record its current marker state (checked or unchecked) and item text into a before-snapshot list.
-     4. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 7).
+     4. Re-evaluate each checkbox item against the **updated** spec (the version just saved in step 8).
      5. For each checkbox item, update only if the checked/unchecked state actually changes:
         - If the item now passes and was unchecked: change `[ ]` to `[x]`.
         - If the item now fails and was checked: change `[x]`/`[X]` to `[ ]`.
@@ -255,6 +256,7 @@ Check if `.specify/extensions.yml` exists in the project root.
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks

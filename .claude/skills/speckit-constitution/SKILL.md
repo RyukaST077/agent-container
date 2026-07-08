@@ -2,7 +2,7 @@
 name: "speckit-constitution"
 description: "Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync."
 argument-hint: "Principles or values for the project constitution"
-compatibility: "Requires spec-kit project structure with .specify/ directory"
+compatibility: "Works standalone; constitution template is bundled, .specify/ copies are preferred when present"
 metadata:
   author: "github-spec-kit"
   source: "templates/commands/constitution.md"
@@ -52,13 +52,18 @@ You **MUST** consider the user input before proceeding (if not empty).
 
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
 
 You are updating the project constitution at `.specify/memory/constitution.md`. This file is a TEMPLATE containing placeholder tokens in square brackets (e.g. `[PROJECT_NAME]`, `[PRINCIPLE_1_NAME]`). Your job is to (a) collect/derive concrete values, (b) fill the template precisely, and (c) propagate any amendments across dependent artifacts.
 
-**Note**: If `.specify/memory/constitution.md` does not exist yet, it should have been initialized from `.specify/templates/constitution-template.md` during project setup. If it's missing, copy the template first.
+**Note**: If `.specify/memory/constitution.md` does not exist yet, create it first (in this resolution order):
+
+1. Copy from `.specify/templates/overrides/constitution-template.md` if present (project override — highest priority in the resolution stack).
+2. Otherwise copy from `.specify/templates/constitution-template.md` if the project provides one.
+3. Otherwise copy from the template bundled with this skill at `reference/constitution-template.md` (relative to this SKILL.md). This keeps the skill self-contained and runnable without any external `.specify/` template.
 
 Follow this execution flow:
 
@@ -82,12 +87,18 @@ Follow this execution flow:
    - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
    - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
 
-4. Consistency propagation checklist (convert prior checklist into active validations):
-   - Read `.specify/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.
-   - Read `.specify/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
-   - Read `.specify/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
-   - Read each command file in `.specify/templates/commands/*.md` (including this one) to verify no outdated references (agent-specific names like CLAUDE only) remain when generic guidance is required.
-   - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
+4. Consistency propagation checklist (convert prior checklist into active validations).
+
+   For each dependent template, check the file the template resolution stack actually resolves, in this order: the project override under `.specify/templates/overrides/` when present, otherwise the project copy under `.specify/templates/`, otherwise the copy bundled with the sibling skill (paths relative to this SKILL.md):
+   - Plan template: `.specify/templates/overrides/plan-template.md`, else `.specify/templates/plan-template.md`, else `../speckit-plan/reference/plan-template.md` — ensure any "Constitution Check" or rules align with updated principles.
+   - Spec template: `.specify/templates/overrides/spec-template.md`, else `.specify/templates/spec-template.md`, else `../speckit-specify/reference/spec-template.md` — check scope/requirements alignment; flag if the constitution adds/removes mandatory sections or constraints.
+   - Tasks template: `.specify/templates/overrides/tasks-template.md`, else `.specify/templates/tasks-template.md`, else `../speckit-tasks/reference/tasks-template.md` — ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
+   - Command files in `.specify/templates/commands/*.md`, if that directory exists (skip silently when absent) — verify no outdated references (agent-specific names like CLAUDE only) remain when generic guidance is required.
+   - Any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
+
+   If a template cannot be located in either location, do not fail — record it as ⚠ pending in the Sync Impact Report.
+
+   **Where to write template changes**: never edit the skill-bundled `reference/` templates for project-specific amendments — they are shared, upstream-derived assets. When a resolved template needs a project-specific change, write a project override to `.specify/templates/overrides/<template-name>.md` instead (the resolution stack prefers `overrides/` over every other location). Editing project-owned copies under `.specify/templates/` directly is fine.
 
 5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
    - Version change: old → new
@@ -154,4 +165,5 @@ Check if `.specify/extensions.yml` exists in the project root.
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
+    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
