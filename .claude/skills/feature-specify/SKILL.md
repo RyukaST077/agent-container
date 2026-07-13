@@ -1,5 +1,5 @@
 ---
-name: "speckit-specify"
+name: "feature-specify"
 description: "Create or update the feature specification from a natural language feature description."
 argument-hint: "Describe the feature you want to specify"
 compatibility: "Requires spec-kit project structure with .specify/ directory"
@@ -45,7 +45,7 @@ When `$ARGUMENTS` does not name a concrete feature unit (empty, or a request lik
    ```markdown
    # Feature Backlog
 
-   Derived from `docs/`. One row per feature unit. Run `/speckit-specify <unit>` to spec a unit.
+   Derived from `docs/`. One row per feature unit. Run `/feature-specify <unit>` to spec a unit.
 
    | # | Unit | Source docs | Spec | Plan | Tasks | Implement | Feature dir |
    |---|------|-------------|------|------|-------|-----------|-------------|
@@ -57,7 +57,7 @@ When `$ARGUMENTS` does not name a concrete feature unit (empty, or a request lik
 
 ### Mode B — Specify one unit
 
-When a concrete unit is given (typed in `$ARGUMENTS`, e.g. `/speckit-specify User
+When a concrete unit is given (typed in `$ARGUMENTS`, e.g. `/feature-specify User
 Authentication`, or chosen in Mode A):
 
 1. Read `docs/` and select the sections relevant to **this unit only** (use the `Source docs`
@@ -65,7 +65,7 @@ Authentication`, or chosen in Mode A):
 2. Use those sections as the **initial feature input** for the steps below, combined with any
    extra guidance the user typed. Produce the spec for **this one unit only**.
 3. In the generated `spec.md`, record which `docs/` files/sections it was derived from (a short
-   "Source Documents" note) so `/speckit-plan` can find them.
+   "Source Documents" note) so `/feature-plan` can find them.
 4. After the spec is written, update `specs/backlog.md`: mark this unit's **Spec** column done
    and fill its **Feature dir** with `SPECIFY_FEATURE_DIRECTORY`.
 
@@ -110,7 +110,7 @@ with the typed feature description as the input.
 
 ## Outline
 
-The text the user typed after `/speckit-specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
+The text the user typed after `/feature-specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
 
@@ -162,10 +162,10 @@ Given that feature description, do this:
      }
      ```
      Write the actual resolved directory path value (for example, `specs/003-user-auth`), not the literal string `SPECIFY_FEATURE_DIRECTORY`.
-     This allows downstream commands (`/speckit-plan`, `/speckit-tasks`, etc.) to locate the feature directory without relying on git branch name conventions.
+     This allows downstream commands (`/feature-plan`, `/feature-tasks`, etc.) to locate the feature directory without relying on git branch name conventions.
 
    **IMPORTANT**:
-   - You must only create one feature per `/speckit-specify` invocation
+   - You must only create one feature per `/feature-specify` invocation
    - The spec directory name and the git branch name are independent — they may be the same but that is the user's choice
    - The spec directory and file are always created by this command, never by the hook
 
@@ -239,7 +239,7 @@ Given that feature description, do this:
       
       ## Notes
       
-      - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
+      - Items marked incomplete require spec updates before `/feature-clarify` or `/feature-plan`
       ```
 
    b. **Run Validation Check**: Review the spec against each checklist item:
@@ -334,7 +334,7 @@ Report completion to the user with:
 - `SPECIFY_FEATURE_DIRECTORY` — the feature directory path
 - `SPEC_FILE` — the spec file path
 - Checklist results summary
-- Readiness for the next phase (`/speckit-clarify` or `/speckit-plan`)
+- Readiness for the next phase (`/feature-clarify` or `/feature-plan`)
 
 **NOTE:** Branch creation is handled by the `before_specify` hook (git extension). Spec directory and file creation are always handled by this core command.
 

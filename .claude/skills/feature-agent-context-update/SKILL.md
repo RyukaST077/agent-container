@@ -1,5 +1,5 @@
 ---
-name: speckit-agent-context-update
+name: feature-agent-context-update
 description: Refresh the managed Spec Kit section in the coding agent context file
 compatibility: Works standalone; uses .specify/ configuration and scripts when present
 metadata:
@@ -34,7 +34,7 @@ Resolve the following, in order, before touching any file:
    2. `.specify/feature.json` → `feature_directory` + `/plan.md`, if that file exists.
    3. The most recently modified `specs/*/plan.md`.
 
-   If none is found, report "no plan found — run `/speckit-plan` first" and stop successfully (do not create a plan).
+   If none is found, report "no plan found — run `/feature-plan` first" and stop successfully (do not create a plan).
 
 ## Execution
 

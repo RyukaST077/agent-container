@@ -1,5 +1,5 @@
 ---
-name: "speckit-constitution"
+name: "feature-constitution"
 description: "Create or update the project constitution from interactive or provided principle inputs, ensuring all dependent templates stay in sync."
 argument-hint: "Principles or values for the project constitution"
 compatibility: "Works standalone; constitution template is bundled, .specify/ copies are preferred when present"
@@ -90,9 +90,9 @@ Follow this execution flow:
 4. Consistency propagation checklist (convert prior checklist into active validations).
 
    For each dependent template, check the file the template resolution stack actually resolves, in this order: the project override under `.specify/templates/overrides/` when present, otherwise the project copy under `.specify/templates/`, otherwise the copy bundled with the sibling skill (paths relative to this SKILL.md):
-   - Plan template: `.specify/templates/overrides/plan-template.md`, else `.specify/templates/plan-template.md`, else `../speckit-plan/reference/plan-template.md` — ensure any "Constitution Check" or rules align with updated principles.
-   - Spec template: `.specify/templates/overrides/spec-template.md`, else `.specify/templates/spec-template.md`, else `../speckit-specify/reference/spec-template.md` — check scope/requirements alignment; flag if the constitution adds/removes mandatory sections or constraints.
-   - Tasks template: `.specify/templates/overrides/tasks-template.md`, else `.specify/templates/tasks-template.md`, else `../speckit-tasks/reference/tasks-template.md` — ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
+   - Plan template: `.specify/templates/overrides/plan-template.md`, else `.specify/templates/plan-template.md`, else `../feature-plan/reference/plan-template.md` — ensure any "Constitution Check" or rules align with updated principles.
+   - Spec template: `.specify/templates/overrides/spec-template.md`, else `.specify/templates/spec-template.md`, else `../feature-specify/reference/spec-template.md` — check scope/requirements alignment; flag if the constitution adds/removes mandatory sections or constraints.
+   - Tasks template: `.specify/templates/overrides/tasks-template.md`, else `.specify/templates/tasks-template.md`, else `../feature-tasks/reference/tasks-template.md` — ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
    - Command files in `.specify/templates/commands/*.md`, if that directory exists (skip silently when absent) — verify no outdated references (agent-specific names like CLAUDE only) remain when generic guidance is required.
    - Any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
 

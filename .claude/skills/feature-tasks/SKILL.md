@@ -1,5 +1,5 @@
 ---
-name: "speckit-tasks"
+name: "feature-tasks"
 description: "Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts."
 argument-hint: "Optional task generation constraints"
 compatibility: "Requires spec-kit project structure with .specify/ directory"
@@ -90,7 +90,7 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Parallel execution examples per story
    - Implementation strategy section (MVP first, incremental delivery)
 
-5. **Update backlog**: If `specs/backlog.md` exists and this feature has a row there, mark the unit's **Tasks** column done (mirrors how `/speckit-specify` and `/speckit-plan` maintain their columns).
+5. **Update backlog**: If `specs/backlog.md` exists and this feature has a row there, mark the unit's **Tasks** column done (mirrors how `/feature-specify` and `/feature-plan` maintain their columns).
 
 ## Mandatory Post-Execution Hooks
 
