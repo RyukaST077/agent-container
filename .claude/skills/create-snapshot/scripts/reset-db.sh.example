@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# スナップショット用 DB リセット & テストデータ投入 テンプレート
+#
+# 役割:
+#   record のたびに DB を既知の初期状態に戻し、スナップショットの再現性を保証する。
+#   seed 後のフィクスチャ ID を fixture.env に書き出し、capture.sh が参照する。
+#
+# 使い方:
+#   cp reset-db.sh.example reset-db.sh
+#   $EDITOR reset-db.sh          # プロジェクト固有部分を編集
+#   chmod +x reset-db.sh
+#
+#   # 単体実行
+#   bash tools/snapshot/reset-db.sh
+#
+#   # snapshot.sh と連携（record 前に自動実行）
+#   export SEED_CMD="bash tools/snapshot/reset-db.sh"
+#   export CAPTURE_CMD="bash tools/snapshot/capture.sh"
+#   bash tools/snapshot/snapshot.sh record
+#
+# カスタマイズが必要な箇所:
+#   - コンテナ名 / 接続情報（Docker 環境の場合）
+#   - DB リセット方式（migrate:fresh / db:reset / truncate 等）
+#   - シーダー名と実行順序
+#   - プロジェクト固有フィクスチャ SQL
+#   - テストユーザー登録の API 呼び出し
+#   - fixture.env の出力項目
+#
+# 設計指針:
+#   - 本番 DB には絶対に接続しない（コンテナ名 / ホスト名で明示的に限定する）
+#   - 冪等であること（何度実行しても同じ初期状態になる）
+#   - fixture.env に書き出す ID は seed 結果から動的に取得する
+#     （ハードコードは避ける — シーダーの変更で壊れるため）
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# ================================================================
+# 環境設定 — プロジェクトに合わせて変更する
+# ================================================================
+
+# Docker コンテナ名（docker ps で確認できるもの）
+# Docker を使わない場合はコメントアウトして直接コマンドに置き換える
+: "${APP_CONTAINER:=your-app-container-1}"
+: "${DB_CONTAINER:=your-db-container-1}"
+
+# API の接続先
+# コンテナ内から叩く場合は内部ポート、ホストから叩く場合は公開ポート
+: "${API_INTERNAL_URL:=http://localhost}"
+
+# テスト用 API キー（認証が必要なプロジェクトの場合）
+: "${TEST_API_KEY:=test-api-key-local}"
+
+# ================================================================
+# ヘルパー関数
+# ================================================================
+
+log() { echo "[reset-db] $*"; }
+die() { echo "[reset-db] ERROR: $*" >&2; exit 1; }
+
+# Docker コンテナの存在チェック
+check_containers() {
+  for c in "$APP_CONTAINER" "$DB_CONTAINER"; do
+    docker inspect "$c" >/dev/null 2>&1 \
+      || die "Container $c not found. Run 'docker compose up -d' first."
+  done
+}
+
+# ================================================================
+# Step 1: DB リセット
+# ================================================================
+# フレームワークに合わせて変更する。代表例:
+#
+# Laravel:
+#   docker exec "$APP_CONTAINER" php artisan migrate:fresh --force
+#   docker exec "$APP_CONTAINER" php artisan migrate:fresh --path=database/migrations/app --database=app --force
+#
+# Rails:
+#   docker exec "$APP_CONTAINER" rails db:reset RAILS_ENV=test
+#   docker exec "$APP_CONTAINER" rails db:seed RAILS_ENV=test
+#
+# Django:
+#   docker exec "$APP_CONTAINER" python manage.py flush --no-input
+#   docker exec "$APP_CONTAINER" python manage.py migrate
+#
+# 生 SQL (フレームワーク非依存):
+#   docker exec "$DB_CONTAINER" mysql -uroot -proot mydb -e "DROP DATABASE mydb; CREATE DATABASE mydb;"
+
+reset_database() {
+  log "Resetting database..."
+  # --- ここにプロジェクト固有の DB リセットコマンドを記述 ---
+  # docker exec "$APP_CONTAINER" php artisan migrate:fresh --force \
+  #   || die "migrate:fresh failed"
+  die "reset_database() is not implemented. Edit reset-db.sh for your project."
+}
+
+# ================================================================
+# Step 2: シーダー実行
+# ================================================================
+# シーダーの実行順序が重要な場合はコメントで明記する。
+# 依存関係の例: Plan → Language → MasterData → Application
+#
+# Laravel:
+#   docker exec "$APP_CONTAINER" php artisan db:seed --class=PlanDataSeeder --force
+#   docker exec "$APP_CONTAINER" php artisan db:seed --class=MasterDataSeeder --force
+#
+# Rails:
+#   docker exec "$APP_CONTAINER" rails db:seed RAILS_ENV=test
+#
+# Django:
+#   docker exec "$APP_CONTAINER" python manage.py loaddata fixtures/initial_data.json
+
+run_seeders() {
+  log "Running seeders..."
+  # --- ここにプロジェクト固有のシーダーコマンドを記述 ---
+  # docker exec "$APP_CONTAINER" php artisan db:seed --class=YourSeeder --force
+  :
+}
+
+# ================================================================
+# Step 3: 共通フィクスチャ（API キー等）
+# ================================================================
+# シーダーに含まれない共通データを SQL で投入する。
+# 例: テスト用 API キー、管理者アカウント等
+
+insert_common_fixtures() {
+  log "Inserting common fixtures..."
+  # --- API キーの例 ---
+  # ⚠️ シーダーが API キーをランダム生成する実装 (Laravel の
+  #    `ApplicationApiKey::generateApiKey()` / `uniqid()` / `Str::random()` 等)
+  #    の場合、**先に DELETE してから INSERT** する。
+  #    `INSERT IGNORE` では既存のランダム値レコードが UNIQUE 制約を握って
+  #    固定値の挿入が静かに無視され、capture.sh が 403 を返し続ける。
+  # docker exec "$DB_CONTAINER" mysql -uroot -proot your_db -e "
+  #   DELETE FROM api_keys WHERE application_id = 1;
+  #   INSERT INTO api_keys (key, application_id, created_at, updated_at)
+  #   VALUES ('${TEST_API_KEY}', 1, NOW(), NOW());
+  # " 2>/dev/null
+  #
+  # --- API キーキャッシュのクリア (Cache::remember 経由の実装なら必須) ---
+  # docker exec "$APP_CONTAINER" php artisan cache:clear 2>/dev/null || true
+  :
+}
+
+# ================================================================
+# Step 4: プロジェクト固有フィクスチャ
+# ================================================================
+# シーダーで入らないがスナップショットに必要なデータを投入する。
+# 典型的な例:
+#   - シーダーのデフォルトが「非公開」のエリア/商品 → 公開状態のレコードが必要
+#   - QR コード、シリアルコード等の補助テーブル
+#   - 外部キー参照が必要なリレーション
+#
+# 注意:
+#   - publish_scope / enabled / SoftDeletes 等で
+#     「DB に存在するが API から見えない」データに注意
+#   - ID エンコーディング（暗号化 ID / UUID / 連番）を確認し、
+#     API が受け付ける形式で fixture.env に書き出す
+
+insert_project_fixtures() {
+  log "Inserting project-specific fixtures..."
+  # --- ここにプロジェクト固有のフィクスチャ SQL を記述 ---
+  # docker exec "$DB_CONTAINER" mysql -uroot -proot your_db -e "
+  #   INSERT INTO qrcodes (area_id, code, enabled, created_at, updated_at)
+  #   VALUES (1, 'TEST-QR-001', 1, NOW(), NOW());
+  # " 2>/dev/null
+  :
+}
+
+# ================================================================
+# Step 5: テストユーザー登録（API 経由）
+# ================================================================
+# ユーザー関連エンドポイントのテストに必要。
+# DB 直接 INSERT より API 経由が安全（バリデーション / ID 生成ロジックを通る）。
+#
+# レスポンスから user_id を抽出して後続の fixture.env に書き出す。
+# レスポンス形式はプロジェクトによって異なるので python3 のパース部分を調整する。
+
+register_test_user() {
+  log "Registering test user via API..."
+
+  # アプリケーションキャッシュのクリア（DB リセット後の stale cache 防止）
+  # docker exec "$APP_CONTAINER" php artisan cache:clear 2>/dev/null || true
+
+  # local register_body='{"name":"snapshot-user","email":"snapshot@test.local","password":"test1234"}'
+  # local resp
+  # resp="$(docker exec "$APP_CONTAINER" curl -sS -X POST "${API_INTERNAL_URL}/api/users/register" \
+  #   -H 'Content-Type: application/json' \
+  #   -H "Authorization: Bearer ${TEST_API_KEY}" \
+  #   --data-raw "${register_body}" 2>/dev/null)"
+  #
+  # # レスポンス形式に合わせてパースを調整
+  # # 例: {"data":{"id":"xxx"}} or {"id":"xxx"} or {"user":{"id":"xxx"}}
+  # TEST_USER_ID="$(echo "$resp" | python3 -c '
+  # import json, sys
+  # d = json.load(sys.stdin)
+  # print(d.get("data",{}).get("id","") or d.get("id",""))
+  # ' 2>/dev/null || true)"
+  #
+  # if [[ -z "$TEST_USER_ID" ]]; then
+  #   log "WARNING: Could not extract user_id from: $resp"
+  #   log "WARNING: User-dependent endpoints may return errors."
+  # fi
+
+  TEST_USER_ID=""
+}
+
+# ================================================================
+# Step 6: fixture.env 書き出し
+# ================================================================
+# capture.sh が source して使うフィクスチャ ID を書き出す。
+# ID はハードコードせず、seed / API レスポンスから取得した値を使う。
+#
+# ID エンコーディングに注意:
+#   - 連番 DB ID がそのまま API に出る場合: FIXTURE_AREA_ID=1
+#   - デバッグモード暗号化 ID: FIXTURE_AREA_ID=id-1
+#   - UUID: FIXTURE_AREA_ID=550e8400-e29b-41d4-a716-446655440000
+#   - 本番暗号化 ID: API レスポンスから取得する
+
+write_fixture_env() {
+  local fixture_file="${SCRIPT_DIR}/fixture.env"
+
+  cat > "$fixture_file" <<ENVEOF
+# Auto-generated by reset-db.sh — DO NOT EDIT MANUALLY
+# Generated at: $(date -Iseconds)
+#
+# --- seed 由来のフィクスチャ ID ---
+# FIXTURE_AREA_ID=1
+# FIXTURE_SPOT_ID=1
+# FIXTURE_CATEGORY_ID=1
+
+# --- reset-db.sh で登録したテストユーザー ---
+FIXTURE_USER_ID=${TEST_USER_ID:-}
+ENVEOF
+
+  log "Fixture env written to: $fixture_file"
+  log ""
+  log "=== Fixture Summary ==="
+  grep -v '^#' "$fixture_file" | grep -v '^$' || true
+  log ""
+  log "DB reset complete. Run 'bash tools/snapshot/snapshot.sh record' to capture."
+}
+
+# ================================================================
+# メイン実行
+# ================================================================
+
+check_containers
+reset_database
+run_seeders
+insert_common_fixtures
+insert_project_fixtures
+register_test_user
+write_fixture_env

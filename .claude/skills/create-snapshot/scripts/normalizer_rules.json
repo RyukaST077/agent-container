@@ -1,0 +1,54 @@
+{
+  "_comment": "API スナップショット比較の正規化 & 比較ルール。プロジェクト固有の揺らぎ/比較対象を追加するときは各セクションに項目を足す。",
+
+  "match_keys": ["endpoint", "method"],
+
+  "_compare_fields_note": "比較したい項目を並べる。標準は http_code と response_body。拡張候補: type_signature (型変化検知), response_headers (ヘッダ比較)",
+  "compare_fields": ["http_code", "response_body"],
+
+  "_skip_body_endpoints_note": "body を比較対象から外すエンドポイント (endpoint フィールドの値)。phpinfo() を返す info 系、現在時刻/uptime を含むヘルスチェック、opcache 統計を含む診断系は **初回 approve の前に必ず登録** すること。入れ忘れると毎回の compare で巨大な HTML diff が発生し CI が壊れる。http_code とヘッダの退行は比較対象に残る。",
+  "skip_body_endpoints": [],
+
+  "_compare_headers_note": "compare_fields に response_headers を追加したときに比較するヘッダ名 (小文字)。無指定なら全部スキップ",
+  "compare_headers": ["content-type", "cache-control"],
+
+  "_diff_max_lines_note": "ボディ/ヘッダ/型 diff の表示行上限",
+  "diff_max_lines": 20,
+
+  "_list_sort_note": "順序が意味を持たない配列を安定化する。{endpoint名: {path: 'a.b', key: 'id'}} でドット区切りパスの配列をソート",
+  "list_sort": {},
+
+  "_idempotent_methods_note": "capture 側で冪等性チェック (同じリクエストを2回叩いて一致) を行うときの対象。比較器側では未使用、キャプチャ実装の指針",
+  "idempotent_methods": ["GET"],
+
+  "_severity_overrides_note": "rule 名 → severity の上書き。未指定時のデフォルトは field_added=compatible / その他=breaking。プロジェクトの契約ポリシーで調整する",
+  "severity_overrides": {},
+
+  "_cluster_min_count_note": "差分クラスタリングで 'パターン集約' として表示する最小件数。小さくすると粒度が細かくなる",
+  "cluster_min_count": 2,
+
+  "key_rules": [
+    {"type": "exact",    "keys": ["id"],                                            "token": "{{ID}}",       "applies_to_int": true},
+    {"type": "suffix",   "keys": ["_id"],                                           "token": "{{ID}}",       "applies_to_int": true},
+    {"type": "exact",    "keys": ["uuid"],                                          "token": "{{UUID}}"},
+    {"type": "suffix",   "keys": ["_at"],                                           "token": "{{TIMESTAMP}}"},
+    {"type": "exact",    "keys": ["created_at","updated_at","deleted_at","expires_at","expire_at","start_at","end_at","published_at","registered_at","last_login_at"], "token": "{{TIMESTAMP}}"},
+    {"type": "contains", "keys": ["token","secret","password","signature","api_key"], "token": "{{SECRET}}"},
+    {"type": "suffix",   "keys": ["_code"],                                         "token": "{{CODE}}"},
+    {"type": "contains", "keys": ["url","uri","link"],            "value_regex": "^https?://", "token": "{{URL}}"},
+    {"type": "contains", "keys": ["image","thumbnail","avatar","icon"], "value_regex": "^https?://", "token": "{{URL}}"},
+    {"type": "exact",    "keys": ["etag"],                                          "token": "{{ETAG}}"},
+    {"type": "exact",    "keys": ["date","last-modified","expires","set-cookie"],   "token": "{{HEADER_VOLATILE}}"},
+    {"type": "exact",    "keys": ["x-request-id","x-trace-id","x-correlation-id"],  "token": "{{TRACE_ID}}"}
+  ],
+
+  "value_rules": [
+    {"regex": "^\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}([.]\\d+)?([Zz]|[+-]\\d{2}:?\\d{2})?$", "token": "{{TIMESTAMP}}"},
+    {"regex": "^\\d{4}-\\d{2}-\\d{2}$",                                                             "token": "{{DATE}}"},
+    {"regex": "^\\d{4}/\\d{2}/\\d{2}$",                                                             "token": "{{DATE}}"},
+    {"regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",       "token": "{{UUID}}"},
+    {"regex": "^[0-9a-fA-F]{32,64}$",                                                               "token": "{{HEX_DIGEST}}"},
+    {"regex": "^\\d{10,}$",                                                                          "token": "{{NUMERIC_ID}}"},
+    {"regex": "^https?://",                                                                         "token": "{{URL}}"}
+  ]
+}

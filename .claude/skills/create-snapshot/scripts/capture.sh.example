@@ -1,0 +1,436 @@
+#!/usr/bin/env bash
+# キャプチャスクリプト テンプレート
+#
+# 役割:
+#   対象 API を叩き、1 コールにつき 1 行の JSONL を $SNAPSHOT_CAPTURE_FILE に追記する。
+#   このファイルだけがプロジェクトごとにカスタマイズが必要。
+#
+# 出力する 1 行の JSON スキーマ:
+#   必須: endpoint (論理名), http_code
+#   推奨: method, suite, url, response_body
+#   任意: result, expected
+#
+# 使い方 (プロジェクト側):
+#   cp capture.sh.example capture.sh
+#   $EDITOR capture.sh
+#   chmod +x capture.sh
+#   export CAPTURE_CMD="bash tools/snapshot/capture.sh"
+#   bash tools/snapshot/snapshot.sh record
+
+set -uo pipefail
+
+: "${SNAPSHOT_CAPTURE_FILE:?SNAPSHOT_CAPTURE_FILE must be set (invoked via snapshot.sh)}"
+: "${BASE_URL:=http://localhost:8080}"
+
+# ---- fixture.env の自動読み込み ----
+# reset-db.sh が生成する fixture.env を読み込む（存在すれば）。
+# これにより FIXTURE_* 環境変数（テストユーザー ID、エリア ID 等）が設定される。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FIXTURE_ENV="${SCRIPT_DIR}/fixture.env"
+if [[ -f "$FIXTURE_ENV" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$FIXTURE_ENV"
+  set +a
+fi
+
+# fixture.env から読み込んだユーザー ID を認証ヘッダに連携する例:
+# : "${FIXTURE_USER_ID:=}"
+# : "${X_USER_ID:=${FIXTURE_USER_ID}}"
+
+# JSON 1 行を JSONL に追記する
+# 拡張フィールド: response_headers / request (compare_fields で有効化したときに使用)
+emit() {
+  local suite="$1" endpoint="$2" method="$3" url="$4" http_code="$5" body="$6" headers_raw="${7:-}" req_body="${8:-}"
+  python3 - "$suite" "$endpoint" "$method" "$url" "$http_code" "$body" "$headers_raw" "$req_body" <<'PY' >> "$SNAPSHOT_CAPTURE_FILE"
+import json, sys
+suite, endpoint, method, url, code, body, headers_raw, req_body = sys.argv[1:9]
+
+def parse_body(s):
+    if not s:
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        return s
+
+def parse_headers(raw):
+    # curl -D の出力を dict に変換
+    out = {}
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line or line.startswith("HTTP/"):
+            continue
+        if ":" in line:
+            k, v = line.split(":", 1)
+            out[k.strip().lower()] = v.strip()
+    return out
+
+entry = {
+    "suite": suite,
+    "endpoint": endpoint,
+    "method": method,
+    "url": url,
+    "http_code": str(code),
+    "response_body": parse_body(body),
+}
+headers = parse_headers(headers_raw)
+if headers:
+    entry["response_headers"] = headers
+if req_body:
+    entry["request_body"] = parse_body(req_body)
+print(json.dumps(entry, ensure_ascii=False))
+PY
+}
+
+# 基本の呼び出しラッパ: curl で叩いて emit する (ヘッダも取得)
+# 使用例: call normal users.list GET "/v1/users"
+# 使用例: call normal users.show GET "/v1/users/1" -H "Authorization: Bearer $TOKEN"
+call() {
+  local suite="$1" endpoint="$2" method="$3" path="$4"; shift 4
+  local url="${BASE_URL}${path}"
+  local body_tmp hdr_tmp
+  body_tmp="$(mktemp)"
+  hdr_tmp="$(mktemp)"
+  local code
+  code="$(curl -sS -o "$body_tmp" -D "$hdr_tmp" -w '%{http_code}' -X "$method" "$url" "$@" 2>/dev/null || echo "000")"
+  emit "$suite" "$endpoint" "$method" "$url" "$code" \
+       "$(cat "$body_tmp" 2>/dev/null || true)" \
+       "$(cat "$hdr_tmp" 2>/dev/null || true)" \
+       ""
+  rm -f "$body_tmp" "$hdr_tmp"
+}
+
+# POST/PUT 等で JSON ボディを送る場合のラッパ (request_body も記録)
+# 使用例: call_json normal users.create POST "/v1/users" '{"name":"foo"}'
+call_json() {
+  local suite="$1" endpoint="$2" method="$3" path="$4" body="$5"; shift 5
+  local url="${BASE_URL}${path}"
+  local body_tmp hdr_tmp
+  body_tmp="$(mktemp)"
+  hdr_tmp="$(mktemp)"
+  local code
+  code="$(curl -sS -o "$body_tmp" -D "$hdr_tmp" -w '%{http_code}' -X "$method" "$url" \
+    -H 'Content-Type: application/json' --data-raw "$body" "$@" 2>/dev/null || echo "000")"
+  emit "$suite" "$endpoint" "$method" "$url" "$code" \
+       "$(cat "$body_tmp" 2>/dev/null || true)" \
+       "$(cat "$hdr_tmp" 2>/dev/null || true)" \
+       "$body"
+  rm -f "$body_tmp" "$hdr_tmp"
+}
+
+# 冪等性チェック用ラッパ: 同じ GET を2回叩いて、2回目の結果を "idempotency_*" サフィックスで記録
+# 比較時に 1回目 (users.list) と 2回目 (users.list__idem2) を見比べるスクリプトは別途用意する想定
+call_idempotent() {
+  local suite="$1" endpoint="$2" method="$3" path="$4"; shift 4
+  call "$suite" "$endpoint"           "$method" "$path" "$@"
+  call "$suite" "${endpoint}__idem2"  "$method" "$path" "$@"
+}
+
+# ================================================================
+# 異常系・境界値テスト用ラッパ (reference/test-case-matrix.md 参照)
+# ================================================================
+# suite ラベルを「何をテストしているか」で切り分けるためのヘルパ群。
+# - auth       : 認可系 (401/403)       — call_unauth_no_key / call_unauth_bad_key / call_unauth_other_user
+# - validation : バリデーション (400/422) — call_invalid_body
+# - boundary   : 境界値 (min/max/±1)     — call_boundary
+#
+# これらを使うと snapshot_comparator.py の match_keys=["endpoint","method"] が
+# 衝突しないように endpoint に自動でサフィックス (.no_api_key 等) を付与する。
+# coverage_report.py は suite ラベルで網羅率を集計するので、ラッパ経由で書くこと。
+
+# 認可系: API キー欠落で叩く (呼び出し側は x-api-key を渡さないこと)
+# 使用例:
+#   call_unauth_no_key users.me GET "/v1/users/me" \
+#     -H "x-os-type: ios" -H "x-app-version: 3.3.0" -H "x-user-id: ${SNAPSHOT_USER_ID}"
+call_unauth_no_key() {
+  local endpoint="$1" method="$2" path="$3"; shift 3
+  call "auth" "${endpoint}.no_api_key" "$method" "$path" "$@"
+}
+
+# 認可系: 不正な API キーで叩く (呼び出し側は x-api-key を渡さないこと。ラッパが不正値を付与)
+# 使用例:
+#   call_unauth_bad_key users.me GET "/v1/users/me" \
+#     -H "x-os-type: ios" -H "x-app-version: 3.3.0" -H "x-user-id: ${SNAPSHOT_USER_ID}"
+call_unauth_bad_key() {
+  local endpoint="$1" method="$2" path="$3"; shift 3
+  call "auth" "${endpoint}.bad_api_key" "$method" "$path" \
+    -H "x-api-key: invalid-api-key-for-snapshot" "$@"
+}
+
+# 認可系: ユーザー識別ヘッダ (x-user-id) を欠落させる
+# 使用例 (呼び出し側は x-user-id を渡さない):
+#   call_unauth_no_user users.me GET "/v1/users/me" "${COMMON_HEADERS_IOS[@]}"
+call_unauth_no_user() {
+  local endpoint="$1" method="$2" path="$3"; shift 3
+  call "auth" "${endpoint}.no_user_id" "$method" "$path" "$@"
+}
+
+# 認可系: 他人の user_id で叩く (権限分離の検証)
+# 使用例 (呼び出し側は x-user-id を渡さない。ラッパが FIXTURE_USER_ID_OTHER を付与):
+#   call_unauth_other_user users.update PUT "/v1/users/me" '{"nick_name":"x"}' "${COMMON_HEADERS_IOS[@]}"
+#   ※ PUT/POST でボディを渡したい場合は call_unauth_other_user_json を使う
+call_unauth_other_user() {
+  local endpoint="$1" method="$2" path="$3"; shift 3
+  call "auth" "${endpoint}.other_user" "$method" "$path" \
+    -H "x-user-id: ${FIXTURE_USER_ID_OTHER:-999999999999}" "$@"
+}
+
+call_unauth_other_user_json() {
+  local endpoint="$1" method="$2" path="$3" body="$4"; shift 4
+  call_json "auth" "${endpoint}.other_user" "$method" "$path" "$body" \
+    -H "x-user-id: ${FIXTURE_USER_ID_OTHER:-999999999999}" "$@"
+}
+
+# バリデーション系: 不正ボディで叩く (suite=validation 固定 + endpoint にテスト観点サフィックス付与)
+# 使用例:
+#   call_invalid_body users.register missing_nick POST "/v1/users/register" \
+#     '{"address_status":0,"gender":0,"birth_year":1990}' "${COMMON_HEADERS_IOS[@]}"
+# → endpoint=users.register.missing_nick / suite=validation で記録される
+call_invalid_body() {
+  local endpoint="$1" case_name="$2" method="$3" path="$4" body="$5"; shift 5
+  call_json "validation" "${endpoint}.${case_name}" "$method" "$path" "$body" "$@"
+}
+
+# バリデーション系 (GET/DELETE 等ボディなし用): クエリ or path パラメータの異常値テスト
+# 使用例:
+#   call_invalid_query areas.show bad_id_format GET "/v1/areas/!!!INVALID!!!" "${COMMON_HEADERS_IOS[@]}"
+call_invalid_query() {
+  local endpoint="$1" case_name="$2" method="$3" path="$4"; shift 4
+  call "validation" "${endpoint}.${case_name}" "$method" "$path" "$@"
+}
+
+# 境界値系: suite=boundary 固定。case_name にどの境界かを書く (例: nick_max, nick_over_max, birth_min)
+# 使用例:
+#   call_boundary users.register nick_max POST "/v1/users/register" \
+#     "{\"nick_name\":\"${NICK_MAX}\",\"address_status\":0,\"gender\":0,\"birth_year\":1990}" \
+#     "${COMMON_HEADERS_IOS[@]}"
+call_boundary() {
+  local endpoint="$1" case_name="$2" method="$3" path="$4" body="$5"; shift 5
+  call_json "boundary" "${endpoint}.${case_name}" "$method" "$path" "$body" "$@"
+}
+
+# 境界値系 (GET 用): クエリ・path パラメータの境界テスト
+# 使用例:
+#   call_boundary_query areas.list lang_en GET "/v1/areas?langCode=en" "${COMMON_HEADERS_IOS[@]}"
+call_boundary_query() {
+  local endpoint="$1" case_name="$2" method="$3" path="$4"; shift 4
+  call "boundary" "${endpoint}.${case_name}" "$method" "$path" "$@"
+}
+
+# ================================================================
+# ここから下がプロジェクト固有のテストケース定義
+# ================================================================
+
+# --- fixture.env から読み込んだフィクスチャ ID のデフォルト ---
+# reset-db.sh が fixture.env を生成していれば自動で設定済み。
+# 未設定の場合に備えてデフォルトを定義する。
+# ID のフォーマットはプロジェクトの ID エンコーディングに合わせる:
+#   連番: FIXTURE_AREA_ID=1
+#   デバッグ暗号化 ID: FIXTURE_AREA_ID=id-1
+#   UUID: FIXTURE_AREA_ID=550e8400-...
+: "${FIXTURE_AREA_ID:=1}"
+: "${FIXTURE_USER_ID:=}"
+
+# FIXTURE_API_KEY: fixture.env 未生成時のフォールバック値。
+# 既存の開発ドキュメント (例: docs/dev/*.md PHASE "テスト用 API キー登録") に
+# 固定値があればそれを採用すると fixture.env 依存を消せる。
+: "${FIXTURE_API_KEY:=test-api-key-local}"
+
+# ================================================================
+# 共通ヘッダのセット
+# ================================================================
+# なぜセット化するか:
+#   単純な固定 COMMON_HEADERS=(...) で済む API もあるが、実運用では
+#   「OS 別分岐」「認証あり/なし」で複数パターンが要る API が多い。
+#   最初からセットを分けておくと後から「全エンドポイントが x-os-type: ios
+#   送ってたせいで android ルートが全滅」のようなミスが起きない。
+#
+# 必要なければ未使用のセットは削除してよい。
+
+# --- 認証トークン取得の例 (OAuth / JWT / Bearer 等を使うプロジェクト向け) ---
+# TOKEN="$(curl -sS -X POST "${BASE_URL}/v1/auth/login" \
+#   -H 'Content-Type: application/json' \
+#   --data-raw '{"username":"test","password":"test"}' \
+#   | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')"
+
+# --- OS 非依存の共通ヘッダ (Bearer トークン / API キーのみの API 向け) ---
+COMMON_HEADERS=(
+  -H "x-api-key: ${FIXTURE_API_KEY}"
+  # -H "Authorization: Bearer ${TOKEN}"
+)
+
+# --- OS 別ヘッダ (モバイルアプリ API 向け: x-os-type で iOS/Android 分岐するケース) ---
+# 使い分け:
+#   /payments/ios/*   → COMMON_HEADERS_IOS
+#   /payments/android/* → COMMON_HEADERS_ANDROID
+#   その他 (OS 非依存) → COMMON_HEADERS_IOS を流用で可 (or COMMON_HEADERS)
+COMMON_HEADERS_IOS=(
+  -H "x-api-key: ${FIXTURE_API_KEY}"
+  -H "x-os-type: ios"
+  -H "x-app-version: 3.3.0"
+)
+
+COMMON_HEADERS_ANDROID=(
+  -H "x-api-key: ${FIXTURE_API_KEY}"
+  -H "x-os-type: android"
+  -H "x-app-version: 3.3.0"
+)
+
+# --- ユーザー認証後のヘッダ (x-user-id / user_id でユーザーを識別する API 向け) ---
+# SNAPSHOT_USER_ID は登録系エンドポイントを叩いた後に設定する想定。
+# 以下は宣言だけしておき、登録後に再代入する。
+USER_HEADERS_IOS=()
+USER_HEADERS_ANDROID=()
+
+rebuild_user_headers() {
+  USER_HEADERS_IOS=(
+    -H "x-api-key: ${FIXTURE_API_KEY}"
+    -H "x-os-type: ios"
+    -H "x-app-version: 3.3.0"
+    -H "x-user-id: ${SNAPSHOT_USER_ID:-${FIXTURE_USER_ID:-}}"
+  )
+  USER_HEADERS_ANDROID=(
+    -H "x-api-key: ${FIXTURE_API_KEY}"
+    -H "x-os-type: android"
+    -H "x-app-version: 3.3.0"
+    -H "x-user-id: ${SNAPSHOT_USER_ID:-${FIXTURE_USER_ID:-}}"
+  )
+}
+
+# fixture.env 由来の USER_ID があれば初期化しておく
+SNAPSHOT_USER_ID="${FIXTURE_USER_ID:-}"
+rebuild_user_headers
+
+# ================================================================
+# テストケース
+# ================================================================
+
+# ----------------------------------------------------------------
+# テストケースを書く順番 (reference/test-case-matrix.md §「全体観」):
+#   1. normal     — 正常系 (2xx を固定)
+#   2. auth       — 認可 (401/403)
+#   3. validation — バリデーション (400/422)
+#   4. boundary   — 境界値 (min/max/locale)
+#   5. destructive— 破壊系は最後 (以降のテストに影響するため)
+#
+# 各エンドポイントについて最低でも normal + auth + validation + boundary 各1本、
+# 可能なら reference/test-case-matrix.md §「エンドポイント型別」表の観点を埋めること。
+# ----------------------------------------------------------------
+
+# ================================================================
+# 1. 正常系 (suite=normal)
+# ================================================================
+
+# --- マスターデータ取得 ---
+call normal languages     GET "/v1/languages"     "${COMMON_HEADERS_IOS[@]}"
+call normal terms.version GET "/v1/terms/version" "${COMMON_HEADERS_IOS[@]}"
+
+# --- fixture.env の ID を使った GET 単体 ---
+# call normal areas.show GET "/v1/areas/${FIXTURE_AREA_ID}" "${COMMON_HEADERS_IOS[@]}"
+
+# --- 認証済みエンドポイント (登録系で user_id を取得してから再ビルド) ---
+# REGISTER_BODY='{"nick_name":"snap-user","address_status":0,"gender":0,"birth_year":1990}'
+# call_json normal users.register POST "/v1/users/register" "$REGISTER_BODY" "${COMMON_HEADERS_IOS[@]}"
+# REGISTER_RESP="$(curl -sS -X POST "${BASE_URL}/v1/users/register" \
+#   -H 'Content-Type: application/json' "${COMMON_HEADERS_IOS[@]}" \
+#   --data-raw "$REGISTER_BODY")"
+# SNAPSHOT_USER_ID="$(echo "$REGISTER_RESP" | python3 -c '
+# import json,sys
+# d=json.load(sys.stdin)
+# print(d.get("id","") or d.get("user_id","") or d.get("data",{}).get("id","") or d.get("data",{}).get("user_id",""))
+# ')"
+# rebuild_user_headers
+# call normal users.me GET "/v1/users/me" "${USER_HEADERS_IOS[@]}"
+
+# --- Android 専用エンドポイント (OS ヘッダを android に切替) ---
+# call normal payments.android.purchases POST "/v1/payments/android/purchases" "${USER_HEADERS_ANDROID[@]}"
+
+# --- 作成系 (毎回ユニークなフィクスチャで衝突を避ける) ---
+# FIXTURE_SUFFIX="$(date '+%Y%m%d-%H%M%S')-$$"
+# call_json normal users.create POST "/v1/users" \
+#   "{\"name\":\"runner-${FIXTURE_SUFFIX}\",\"email\":\"runner-${FIXTURE_SUFFIX}@example.test\"}" \
+#   "${COMMON_HEADERS_IOS[@]}"
+
+# ================================================================
+# 2. 認可系 (suite=auth)
+# ================================================================
+# 最低でも 1 エンドポイント 1 本 (API キー欠落)。
+# 認証ユーザー必要な保護エンドポイントは no_user_id / other_user も推奨。
+
+# --- API キー欠落 (call_unauth_no_key): x-api-key は渡さない ---
+# call_unauth_no_key languages GET "/v1/languages" \
+#   -H "x-os-type: ios" -H "x-app-version: 3.3.0"
+
+# --- 不正な API キー (call_unauth_bad_key): x-api-key は渡さない。ラッパが付与 ---
+# call_unauth_bad_key languages GET "/v1/languages" \
+#   -H "x-os-type: ios" -H "x-app-version: 3.3.0"
+
+# --- x-user-id 欠落 (ユーザー識別が必要な API) ---
+# call_unauth_no_user users.me GET "/v1/users/me" "${COMMON_HEADERS_IOS[@]}"
+
+# --- 他人の user_id (権限分離テスト) — FIXTURE_USER_ID_OTHER を reset-db.sh で用意 ---
+# call_unauth_other_user users.me GET "/v1/users/me" "${COMMON_HEADERS_IOS[@]}"
+
+# ================================================================
+# 3. バリデーション系 (suite=validation)
+# ================================================================
+# FormRequest の rules() / バリデーション表 (discovery-checklist.md §3-5) から
+# 必須欠落・型違反・enum外・相関違反を1本ずつ
+
+# --- 必須クエリ欠落 (GET の 400) ---
+# call_invalid_query areas.search missing_keyword GET "/v1/areas_search?langCode=ja" "${COMMON_HEADERS_IOS[@]}"
+
+# --- path パラメータが不正形式 (GET の 400) ---
+# call_invalid_query areas.show bad_id_format GET "/v1/areas/!!!INVALID!!!" "${COMMON_HEADERS_IOS[@]}"
+
+# --- POST/PUT のバリデーション: フィールド単位で missing_* / bad_<field> ---
+# call_invalid_body users.register missing_nick POST "/v1/users/register" \
+#   '{"address_status":0,"gender":0,"birth_year":1990}' "${COMMON_HEADERS_IOS[@]}"
+# call_invalid_body users.register bad_gender POST "/v1/users/register" \
+#   '{"nick_name":"snap","address_status":0,"gender":3,"birth_year":1990}' "${COMMON_HEADERS_IOS[@]}"
+# call_invalid_body users.register bad_birth_year POST "/v1/users/register" \
+#   '{"nick_name":"snap","address_status":0,"gender":0,"birth_year":"abc"}' "${COMMON_HEADERS_IOS[@]}"
+
+# ================================================================
+# 4. 境界値系 (suite=boundary)
+# ================================================================
+# 文字列長・数値・locale・件数・ページングの境界を固定化
+
+# --- 多言語 locale 境界 ---
+# call_boundary_query areas.list lang_en GET "/v1/areas?langCode=en" "${COMMON_HEADERS_IOS[@]}"
+# call_boundary_query areas.list lang_ko GET "/v1/areas?langCode=ko" "${COMMON_HEADERS_IOS[@]}"
+# call_boundary_query areas.list lang_zh GET "/v1/areas?langCode=zh" "${COMMON_HEADERS_IOS[@]}"
+
+# --- 件数ゼロ / 存在しない ---
+# call_boundary_query areas.search no_hit GET "/v1/areas_search?langCode=ja&keyword=ZZZZZ9999" "${COMMON_HEADERS_IOS[@]}"
+# call_boundary_query areas.show not_found GET "/v1/areas/${FIXTURE_AREA_ID_NOTFOUND:-id-9999}" "${COMMON_HEADERS_IOS[@]}"
+
+# --- 文字列長境界 (例: nick_name max=20) ---
+# NICK_MAX="$(printf 'a%.0s' {1..20})"
+# NICK_OVER="$(printf 'a%.0s' {1..21})"
+# call_boundary users.register nick_max POST "/v1/users/register" \
+#   "{\"nick_name\":\"${NICK_MAX}\",\"address_status\":0,\"gender\":0,\"birth_year\":1990}" \
+#   "${COMMON_HEADERS_IOS[@]}"
+# call_boundary users.register nick_over_max POST "/v1/users/register" \
+#   "{\"nick_name\":\"${NICK_OVER}\",\"address_status\":0,\"gender\":0,\"birth_year\":1990}" \
+#   "${COMMON_HEADERS_IOS[@]}"
+
+# --- 数値境界 (例: birth_year 1900-2100) ---
+# call_boundary users.register birth_min POST "/v1/users/register" \
+#   '{"nick_name":"snap","address_status":0,"gender":0,"birth_year":1900}' "${COMMON_HEADERS_IOS[@]}"
+# call_boundary users.register birth_under_min POST "/v1/users/register" \
+#   '{"nick_name":"snap","address_status":0,"gender":0,"birth_year":1899}' "${COMMON_HEADERS_IOS[@]}"
+
+# --- マルチバイト / 絵文字 ---
+# call_boundary users.register nick_multibyte POST "/v1/users/register" \
+#   '{"nick_name":"テスト🔥","address_status":0,"gender":0,"birth_year":1990}' "${COMMON_HEADERS_IOS[@]}"
+
+# ================================================================
+# 5. 破壊系 (suite=destructive) — 必ず最後
+# ================================================================
+# 前のテストケースに影響しないように最後に実行
+
+# call destructive users.destroy DELETE "/v1/users" "${USER_HEADERS_IOS[@]}"
+
+exit 0
