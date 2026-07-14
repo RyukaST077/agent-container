@@ -2,7 +2,7 @@
 name: "feature-plan"
 description: "Execute the implementation planning workflow using the plan template to generate design artifacts."
 argument-hint: "Optional guidance for the planning phase"
-compatibility: "Requires spec-kit project structure with .specify/ directory"
+compatibility: "Requires spec-kit project structure with .specify/ directory; bash + PowerShell scripts are bundled"
 metadata:
   author: "github-spec-kit"
   source: "templates/commands/plan.md"
@@ -76,7 +76,15 @@ After planning completes, if `specs/backlog.md` exists, mark this unit's **Plan*
 
 ## Outline
 
-1. **Setup**: Run the setup-plan script from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. Prefer the project script `.specify/scripts/bash/setup-plan.sh --json` if it exists; otherwise fall back to the copy bundled with this skill at `scripts/setup-plan.sh --json` (relative to this SKILL.md), which keeps the skill self-contained. (Both still resolve per-project state — `.specify/feature.json`, templates — via the project's `.specify/` directory.) For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run the setup-plan script from repo root and parse JSON for FEATURE_SPEC, IMPL_PLAN, SPECS_DIR, BRANCH. Pick the variant that matches your shell (they produce the same JSON payload):
+   - **Bash / POSIX shells** (Linux, macOS, Git Bash, WSL): run the `.sh` script with `--json`.
+   - **PowerShell** (Windows PowerShell 5.1+ or `pwsh`): run the `.ps1` script with `-Json`.
+
+   For each variant, prefer the project script if it exists; otherwise fall back to the copy bundled with this skill (relative to this SKILL.md), which keeps the skill self-contained:
+   - Bash: `.specify/scripts/bash/setup-plan.sh` → `scripts/setup-plan.sh`
+   - PowerShell: `.specify/scripts/powershell/setup-plan.ps1` → `scripts/setup-plan.ps1`
+
+   (Both variants resolve per-project state — `.specify/feature.json`, templates — via the project's `.specify/` directory.) For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load context**: Read FEATURE_SPEC, `.specify/memory/constitution.md`, and the `docs/` design documents backing this unit (see "Initial Input from `docs/`" above). Load the IMPL_PLAN template (the setup script copies it into IMPL_PLAN). If IMPL_PLAN is empty or missing (template could not be resolved), seed it from the plan template bundled with this skill at `reference/plan-template.md` (relative to this SKILL.md).
 

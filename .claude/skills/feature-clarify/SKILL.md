@@ -2,7 +2,7 @@
 name: "feature-clarify"
 description: "Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec."
 argument-hint: "Optional areas to clarify in the spec"
-compatibility: "Requires a feature created by /feature-specify (.specify/feature.json); scripts are bundled, no .specify/scripts/ needed"
+compatibility: "Requires a feature created by /feature-specify (.specify/feature.json); bash + PowerShell scripts are bundled, no .specify/scripts/ needed"
 metadata:
   author: "github-spec-kit"
   source: "templates/commands/clarify.md"
@@ -63,7 +63,15 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 Execution steps:
 
-1. Run the check-prerequisites script from repo root **once** with `--json --paths-only` (combined mode / `-Json -PathsOnly`). Prefer the project script `.specify/scripts/bash/check-prerequisites.sh` if it exists; otherwise fall back to the copy bundled with this skill at `scripts/check-prerequisites.sh` (relative to this SKILL.md), which keeps the skill self-contained. (Both still resolve per-project state — `.specify/feature.json` — via the project's `.specify/` directory.) Parse minimal JSON payload fields:
+1. Run the check-prerequisites script from repo root **once** in paths-only + JSON mode. Pick the variant that matches your shell (they produce the same JSON payload):
+   - **Bash / POSIX shells** (Linux, macOS, Git Bash, WSL): run the `.sh` script with `--json --paths-only`.
+   - **PowerShell** (Windows PowerShell 5.1+ or `pwsh`): run the `.ps1` script with `-Json -PathsOnly`.
+
+   For each variant, prefer the project script if it exists; otherwise fall back to the copy bundled with this skill (relative to this SKILL.md), which keeps the skill self-contained:
+   - Bash: `.specify/scripts/bash/check-prerequisites.sh` → `scripts/check-prerequisites.sh`
+   - PowerShell: `.specify/scripts/powershell/check-prerequisites.ps1` → `scripts/check-prerequisites.ps1`
+
+   (Both variants resolve per-project state — `.specify/feature.json` — via the project's `.specify/` directory.) Parse minimal JSON payload fields:
    - `FEATURE_DIR`
    - `FEATURE_SPEC`
    - (Optionally capture `IMPL_PLAN`, `TASKS` for future chained flows.)

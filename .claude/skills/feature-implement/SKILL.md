@@ -101,7 +101,10 @@ self-contained and include:
 
 ## Outline
 
-1. Run the check-prerequisites script from repo root with `--json --require-tasks --include-tasks` and parse FEATURE_DIR and AVAILABLE_DOCS list. Prefer the project script `.specify/scripts/bash/check-prerequisites.sh` if it exists; otherwise fall back to the copy bundled with this skill at `scripts/check-prerequisites.sh` (relative to this SKILL.md), which keeps the skill self-contained. (Both still resolve per-project state — `.specify/feature.json` — via the project's `.specify/` directory.) All paths must be absolute. For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. Run the check-prerequisites script from repo root and parse the FEATURE_DIR and AVAILABLE_DOCS list. **Pick the variant that matches your shell** — both emit identical JSON (`{"FEATURE_DIR":"...","AVAILABLE_DOCS":[...]}`) and resolve per-project state (`.specify/feature.json`) via the project's `.specify/` directory:
+   - **PowerShell** (Windows default): run `scripts/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks` (bundled next to this SKILL.md). Prefer the project script `.specify/scripts/powershell/check-prerequisites.ps1` if it exists.
+   - **bash / sh** (Linux, macOS, WSL): run `scripts/check-prerequisites.sh --json --require-tasks --include-tasks` (bundled next to this SKILL.md). Prefer the project script `.specify/scripts/bash/check-prerequisites.sh` if it exists.
+   - The bundled copies keep the skill self-contained. All paths must be absolute. (bash only) For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Check checklists status** (if FEATURE_DIR/checklists/ exists):
    - Scan all checklist files in the checklists/ directory

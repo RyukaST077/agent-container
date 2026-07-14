@@ -2,7 +2,7 @@
 name: "feature-tasks"
 description: "Generate an actionable, dependency-ordered tasks.md for the feature based on available design artifacts."
 argument-hint: "Optional task generation constraints"
-compatibility: "Requires spec-kit project structure with .specify/ directory"
+compatibility: "Requires spec-kit project structure with .specify/ directory; bash + PowerShell scripts are bundled"
 metadata:
   author: "github-spec-kit"
   source: "templates/commands/tasks.md"
@@ -57,7 +57,15 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Outline
 
-1. **Setup**: Run the setup-tasks script from repo root and parse FEATURE_DIR, TASKS_TEMPLATE, and AVAILABLE_DOCS list. Prefer the project script `.specify/scripts/bash/setup-tasks.sh --json` if it exists; otherwise fall back to the copy bundled with this skill at `scripts/setup-tasks.sh --json` (relative to this SKILL.md), which keeps the skill self-contained. (Both still resolve per-project state — `.specify/feature.json`, templates — via the project's `.specify/` directory.) `FEATURE_DIR` and `TASKS_TEMPLATE` must be absolute paths when provided. `AVAILABLE_DOCS` is a list of document names/relative paths available under `FEATURE_DIR` (for example `research.md` or `contracts/`). For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
+1. **Setup**: Run the setup-tasks script from repo root **once** in JSON mode, then parse FEATURE_DIR, TASKS_TEMPLATE, and AVAILABLE_DOCS list. Pick the variant that matches your shell (they produce the same JSON payload):
+   - **Bash / POSIX shells** (Linux, macOS, Git Bash, WSL): run the `.sh` script with `--json`.
+   - **PowerShell** (Windows PowerShell 5.1+ or `pwsh`): run the `.ps1` script with `-Json`.
+
+   For each variant, prefer the project script if it exists; otherwise fall back to the copy bundled with this skill (relative to this SKILL.md), which keeps the skill self-contained:
+   - Bash: `.specify/scripts/bash/setup-tasks.sh` → `scripts/setup-tasks.sh`
+   - PowerShell: `.specify/scripts/powershell/setup-tasks.ps1` → `scripts/setup-tasks.ps1`
+
+   (Both variants still resolve per-project state — `.specify/feature.json`, templates — via the project's `.specify/` directory.) `FEATURE_DIR` and `TASKS_TEMPLATE` must be absolute paths when provided. `AVAILABLE_DOCS` is a list of document names/relative paths available under `FEATURE_DIR` (for example `research.md` or `contracts/`). For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
 2. **Load design documents**: Read from FEATURE_DIR:
    - **Required**: plan.md (tech stack, libraries, structure), spec.md (user stories with priorities)
