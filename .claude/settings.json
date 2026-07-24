@@ -89,7 +89,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/consult-on-prompt.sh\"",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/consult-on-prompt.cjs\"",
             "timeout": 10,
             "statusMessage": "Checking knowledge/ for this trouble..."
           }
@@ -102,7 +102,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/consult-on-failure.sh\"",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/consult-on-failure.cjs\"",
             "timeout": 10
           }
         ]
@@ -113,7 +113,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/save-nudge-on-stop.sh\"",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/save-nudge-on-stop.cjs\"",
             "timeout": 10
           }
         ]
